@@ -12,7 +12,7 @@ st.set_page_config(
     page_title="Dashboard P&L 2026",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 ARQUIVO_PADRAO = "2026_03_PL_com_BASE_DASH_v2.xlsx"
@@ -77,7 +77,7 @@ CSS = """
         text-align: left;
         color: #ffffff;
         font-weight: 850;
-        min-width: 310px;
+        min-width: 200px;
     }
     table.pnl-matrix tbody tr.main-line td {
         background: #162338;
@@ -259,6 +259,14 @@ CSS = """
     .stTabs [data-baseweb="tab-list"] { gap: 10px; border-bottom: 1px solid #243150; }
     .stTabs [data-baseweb="tab"] { color: #9fb2df; background: transparent; }
     .stTabs [aria-selected="true"] { color: #ffffff; border-bottom: 2px solid #24a8ff; }
+
+    /* Botão de toggle da sidebar */
+    [data-testid="collapsedControl"] {
+        color: #9fb2df !important;
+        background: #0b1224 !important;
+        border: 1px solid #1e2a44 !important;
+        border-radius: 8px !important;
+    }
 
     .table-wrap {
         width: 100%;
@@ -987,13 +995,38 @@ def agregar_pnl_acumulado(df_pnl_periodo):
     if df_pnl_periodo.empty:
         return df_pnl_periodo.copy()
 
+    linhas_percentuais = linhas_percentuais_pnl()
+
     base_valores = df_pnl_periodo[df_pnl_periodo["Métrica"].isin(["Realizado", "Orçado"])].copy()
 
-    agrupado = (
-        base_valores
+    # Para linhas percentuais (Margem Bruta, Margem Líquida, Tx Imposto etc.),
+    # não faz sentido somar os valores mensais — usamos o valor do período mais recente.
+    # Para as demais linhas, acumulamos normalmente.
+    linhas_pct_mask = base_valores["Linha_Normalizada"].isin(linhas_percentuais)
+
+    base_somavel = base_valores[~linhas_pct_mask]
+    base_pct = base_valores[linhas_pct_mask]
+
+    agrupado_soma = (
+        base_somavel
         .groupby(["Produto", "Linha", "Linha_Normalizada", "Métrica", "Ordem_Linha"], as_index=False)["Valor"]
         .sum()
     )
+
+    # Para percentuais: pega o valor do período mais recente disponível
+    if not base_pct.empty and "Data" in base_pct.columns:
+        data_max = base_pct["Data"].max()
+        agrupado_pct = (
+            base_pct[base_pct["Data"] == data_max]
+            .groupby(["Produto", "Linha", "Linha_Normalizada", "Métrica", "Ordem_Linha"], as_index=False)["Valor"]
+            .first()
+        )
+    else:
+        agrupado_pct = base_pct.groupby(
+            ["Produto", "Linha", "Linha_Normalizada", "Métrica", "Ordem_Linha"], as_index=False
+        )["Valor"].last()
+
+    agrupado = pd.concat([agrupado_soma, agrupado_pct], ignore_index=True)
 
     linhas_delta = []
 
@@ -1007,9 +1040,16 @@ def agregar_pnl_acumulado(df_pnl_periodo):
     for _, row in base_pivot.iterrows():
         realizado = row.get("Realizado", 0)
         orcado = row.get("Orçado", 0)
+        linha_norm = row["Linha_Normalizada"]
+        eh_percentual = linha_norm in linhas_percentuais
 
         delta_rs = realizado - orcado
-        delta_pct = pd.NA if orcado == 0 else delta_rs / abs(orcado)
+
+        if eh_percentual:
+            # Para linhas percentuais: variação em pontos percentuais
+            delta_pct = delta_rs if pd.notna(delta_rs) else pd.NA
+        else:
+            delta_pct = pd.NA if orcado == 0 else delta_rs / abs(orcado)
 
         for metrica, valor in [("Δ %", delta_pct), ("Δ R$", delta_rs)]:
             linhas_delta.append(
@@ -1349,14 +1389,20 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
             row[(produto, "Δ %")] = delta_pct
 
             # Regra de cor:
-            # Para linhas de despesa/custo negativas, compara o tamanho do gasto em módulo.
-            # Para as demais linhas, compara Realizado > Orçado.
+            # Quando ambos são negativos (linha de custo/despesa), o mais negativo (maior em módulo) é pior.
+            # Quando ambos são positivos, o menor realizado é pior.
+            # Quando há troca de sinal, compara diretamente.
             if pd.isna(realizado) or pd.isna(orcado):
                 delta_bad = False
-            elif realizado < 0 or orcado < 0:
+            elif realizado < 0 and orcado < 0:
+                # Ambos negativos: mais negativo (maior abs) = pior
                 delta_bad = abs(realizado) > abs(orcado)
+            elif realizado < 0 or orcado < 0:
+                # Troca de sinal: realizado pior se mais negativo
+                delta_bad = realizado < orcado
             else:
-                delta_bad = realizado > orcado
+                # Ambos positivos: realizado menor = pior
+                delta_bad = realizado < orcado
 
             row[(produto, "_delta_bad")] = delta_bad
 
@@ -1715,6 +1761,8 @@ def linha_principal_comparativo(linha):
         normalizar_texto("RECEITAS"),
         normalizar_texto("Operações de Crédito"),
         normalizar_texto("DESPESAS DE ORIGINAÇÃO"),
+        normalizar_texto("DESPESAS TOTAIS"),
+        normalizar_texto("Provisões"),
         normalizar_texto("MARGEM INTERMEDIAÇÃO"),
         normalizar_texto("MG INTERMEDIAÇÃO LIQ"),
         normalizar_texto("MG CONTRIBUIÇÃO DIRETA"),
@@ -1825,6 +1873,8 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         "RECEITAS",
         "Operações de Crédito",
         "DESPESAS DE ORIGINAÇÃO",
+        "DESPESAS TOTAIS",
+        "Provisões",
         "MARGEM INTERMEDIAÇÃO",
         "MG INTERMEDIAÇÃO LIQ",
         "MG CONTRIBUIÇÃO DIRETA",
