@@ -1451,7 +1451,30 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
     base_grafico["Ordem"] = base_grafico["Linha"].map(ordem_linhas)
     base_grafico = base_grafico.sort_values("Ordem", ascending=False)
 
-    base_grafico["Rótulo"] = base_grafico["Valor"].map(formatar_moeda_curta)
+    # Identifica barras "pequenas" (menos de 15% do maior valor em módulo) — para essas,
+    # adicionamos espaços antes do rótulo (lado negativo) ou depois (lado positivo) para
+    # afastar o texto da barra e evitar sobreposição com a barra agrupada vizinha.
+    if not base_grafico.empty:
+        valor_max_abs = base_grafico["Valor"].abs().max()
+    else:
+        valor_max_abs = 1
+
+    def montar_rotulo(valor):
+        texto = formatar_moeda_curta(valor)
+        if valor_max_abs == 0 or pd.isna(valor):
+            return texto
+        proporcao = abs(valor) / valor_max_abs
+        if proporcao < 0.15:
+            # Barras pequenas: empurra o texto para longe da barra
+            espacos = "    "  # 4 espaços
+            if valor < 0:
+                # Texto à esquerda da barra → adiciona espaços à direita do rótulo
+                return f"{texto}{espacos}"
+            else:
+                return f"{espacos}{texto}"
+        return texto
+
+    base_grafico["Rótulo"] = base_grafico["Valor"].map(montar_rotulo)
 
     fig_comp = px.bar(
         base_grafico,
@@ -1463,14 +1486,6 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
         barmode="group",
         labels={"Valor": "Valor", "Linha": "", "Métrica": ""},
     )
-
-    # Para evitar que rótulos de barras pequenas (ex: Provisões) se sobreponham
-    # à barra seguinte, deslocamos o texto para longe do zero quando a barra é pequena
-    # em relação à maior barra do gráfico.
-    if not base_grafico.empty:
-        valor_max_abs = base_grafico["Valor"].abs().max()
-    else:
-        valor_max_abs = 1
 
     fig_comp.update_traces(
         texttemplate="<b>%{text}</b>",
@@ -1495,7 +1510,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
     if not base_grafico.empty:
         x_min = base_grafico["Valor"].min()
         x_max = base_grafico["Valor"].max()
-        x_pad = max((x_max - x_min) * 0.32, 1)
+        x_pad = max((x_max - x_min) * 0.34, 1)
         fig_comp.update_xaxes(
             showgrid=False,
             zeroline=False,
