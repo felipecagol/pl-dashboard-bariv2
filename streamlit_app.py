@@ -865,6 +865,15 @@ def carregar_pnl_mensal(arquivo):
     if df.empty:
         raise ValueError("A aba P&L Mensal - Anualizado foi encontrada, mas nenhum valor numérico foi lido.")
 
+    # Algumas linhas aparecem duplicadas na planilha com o mesmo nome (ex: "Provisões"
+    # como cabeçalho do bloco e como item dentro do bloco, com mesmo valor).
+    # Mantemos só a primeira ocorrência para evitar barras sobrepostas no gráfico
+    # e valores dobrados em outras agregações.
+    df = df.drop_duplicates(
+        subset=["Periodo", "Produto", "Linha_Normalizada", "Métrica"],
+        keep="first",
+    ).reset_index(drop=True)
+
     return df
 
 def obter_linhas_tabela_pnl(df_pnl):
