@@ -1466,24 +1466,26 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
     fig_comp.update_traces(
         texttemplate="<b>%{text}</b>",
         textposition="outside",
-        textfont=dict(size=11, family="Arial Black", color="#FFFFFF"),
+        textfont=dict(size=14, family="Arial Black", color="#FFFFFF"),
         cliponaxis=False,
     )
     fig_comp.update_layout(
         template="plotly_dark",
         paper_bgcolor="#080f1f",
         plot_bgcolor="#080f1f",
-        height=470,
-        margin=dict(l=10, r=95, t=10, b=10),
+        height=620,
+        margin=dict(l=10, r=130, t=20, b=10),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
-        uniformtext_minsize=9,
+        uniformtext_minsize=11,
         uniformtext_mode="show",
+        bargap=0.25,
+        bargroupgap=0.08,
     )
 
     if not base_grafico.empty:
         x_min = base_grafico["Valor"].min()
         x_max = base_grafico["Valor"].max()
-        x_pad = max((x_max - x_min) * 0.18, 1)
+        x_pad = max((x_max - x_min) * 0.28, 1)
         fig_comp.update_xaxes(
             showgrid=False,
             zeroline=False,
@@ -1494,7 +1496,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
     else:
         fig_comp.update_xaxes(showgrid=False, zeroline=False, tickprefix="R$ ", separatethousands=True)
 
-    fig_comp.update_yaxes(showgrid=False, zeroline=False)
+    fig_comp.update_yaxes(showgrid=False, zeroline=False, tickfont=dict(size=12, color="#ffffff"))
     st.plotly_chart(fig_comp, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_resultado_produto}</div>', unsafe_allow_html=True)
