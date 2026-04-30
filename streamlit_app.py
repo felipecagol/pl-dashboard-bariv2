@@ -2043,11 +2043,11 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
         go.Indicator(
             mode="gauge+number",
             value=alcance_pct,
-            number={"suffix": "%", "font": {"size": 36, "color": "#ffffff"}},
-            title={"text": "<b>Resultado Contábil 1T26 x acumulado de 2025</b>", "font": {"size": 20, "color": "#ffffff"}},
+            number={"suffix": "%", "font": {"size": 56, "color": "#ffffff", "family": "Arial Black"}},
+            title={"text": "<b>Resultado Contábil 1T26 x acumulado de 2025</b>", "font": {"size": 22, "color": "#ffffff"}},
             gauge={
-                "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#9fb2df"}},
-                "bar": {"color": cor_barra, "thickness": 0.34},
+                "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#9fb2df", "size": 14}},
+                "bar": {"color": cor_barra, "thickness": 0.38},
                 "bgcolor": "#111a2e",
                 "bordercolor": "#243150",
                 "borderwidth": 1,
@@ -2065,7 +2065,7 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
 
     fig.add_annotation(
         x=0.5,
-        y=-0.24,
+        y=-0.18,
         xref="paper",
         yref="paper",
         showarrow=False,
@@ -2075,15 +2075,15 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
             f"<b>Acumulado de 2025:</b> {formatar_moeda(base)}<br>"
             f"{texto_status}"
         ),
-        font={"size": 13, "color": "#9fb2df"},
+        font={"size": 15, "color": "#9fb2df"},
     )
 
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor="#080f1f",
         plot_bgcolor="#080f1f",
-        height=420,
-        margin=dict(l=20, r=20, t=70, b=150),
+        height=580,
+        margin=dict(l=40, r=40, t=80, b=140),
     )
 
     return fig
