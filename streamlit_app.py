@@ -33,8 +33,8 @@ CSS = """
         background: #111a2e;
         border: 1px solid #243150;
         border-radius: 16px;
-        padding: 18px 18px;
-        min-height: 118px;
+        padding: 22px 22px;
+        min-height: 138px;
         box-shadow: 0 10px 26px rgba(0,0,0,.20);
         text-align: center;
         display: flex;
@@ -127,9 +127,9 @@ CSS = """
         background: #162338;
         font-size: .84rem;
     }
-    .kpi-label { color: #ffffff; font-size: .88rem; font-weight: 700; margin-bottom: 10px; }
-    .kpi-value { color: #ffffff; font-size: 1.65rem; font-weight: 850; line-height: 1.15; }
-    .kpi-help { color: #ffffff; font-size: .80rem; font-weight: 700; margin-top: 9px; }
+    .kpi-label { color: #ffffff; font-size: .96rem; font-weight: 700; margin-bottom: 12px; }
+    .kpi-value { color: #ffffff; font-size: 1.90rem; font-weight: 850; line-height: 1.15; }
+    .kpi-help { color: #ffffff; font-size: .85rem; font-weight: 700; margin-top: 10px; }
     .side-card {
         background: #111a2e;
         border: 1px solid #243150;
@@ -242,9 +242,9 @@ CSS = """
     }
 
     .kpi-delta {
-        font-size: .88rem;
+        font-size: .98rem;
         font-weight: 800;
-        margin-top: 9px;
+        margin-top: 10px;
         line-height: 1.15;
     }
     .delta-positive { color: #22c55e; }
@@ -1423,12 +1423,12 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
 
     st.markdown(f'<div class="section-title">{titulo_cards}</div>', unsafe_allow_html=True)
 
-    for inicio in range(0, len(linhas_principais), 4):
+    for inicio in range(0, len(linhas_principais), 3):
         if inicio > 0:
             st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
 
-        cols_cards = st.columns(4)
-        for col_card, linha in zip(cols_cards, linhas_principais[inicio:inicio + 4]):
+        cols_cards = st.columns(3)
+        for col_card, linha in zip(cols_cards, linhas_principais[inicio:inicio + 3]):
             realizado = valor_pnl(df_pnl, produto_sel_pnl, linha, "Realizado")
 
             if pagina == "Acumulado":
