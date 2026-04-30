@@ -127,9 +127,9 @@ CSS = """
         background: #162338;
         font-size: .84rem;
     }
-    .kpi-label { color: #9fb2df; font-size: .78rem; margin-bottom: 10px; }
+    .kpi-label { color: #ffffff; font-size: .88rem; font-weight: 700; margin-bottom: 10px; }
     .kpi-value { color: #ffffff; font-size: 1.65rem; font-weight: 850; line-height: 1.15; }
-    .kpi-help { color: #60759f; font-size: .72rem; margin-top: 9px; }
+    .kpi-help { color: #ffffff; font-size: .80rem; font-weight: 700; margin-top: 9px; }
     .side-card {
         background: #111a2e;
         border: 1px solid #243150;
@@ -145,8 +145,8 @@ CSS = """
         margin-top: 10px;
     }
     .side-card-label {
-        color: #9fb2df;
-        font-size: .86rem;
+        color: #ffffff;
+        font-size: .92rem;
         font-weight: 700;
         margin-bottom: 12px;
     }
@@ -162,8 +162,9 @@ CSS = """
         margin-top: 12px;
     }
     .side-card-help {
-        color: #60759f;
-        font-size: .78rem;
+        color: #ffffff;
+        font-size: .82rem;
+        font-weight: 700;
         margin-top: 12px;
         line-height: 1.25;
     }
@@ -1218,7 +1219,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
         plot_bgcolor="#080f1f",
         height=470,
         margin=dict(l=10, r=95, t=10, b=10),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
         uniformtext_minsize=9,
         uniformtext_mode="show",
     )
@@ -2253,7 +2254,7 @@ with tab_resultados:
                 plot_bgcolor="#080f1f",
                 height=500,
                 margin=dict(l=10, r=40, t=35, b=20),
-                legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0),
+                legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
             )
             fig.update_xaxes(
                 tickmode="array",
@@ -2400,7 +2401,7 @@ with tab_comp_2025:
                 plot_bgcolor="#080f1f",
                 height=520,
                 margin=dict(l=10, r=120, t=10, b=20),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
             )
             st.plotly_chart(fig_comp_ano, use_container_width=True)
 
