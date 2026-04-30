@@ -1463,29 +1463,39 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
         barmode="group",
         labels={"Valor": "Valor", "Linha": "", "Métrica": ""},
     )
+
+    # Para evitar que rótulos de barras pequenas (ex: Provisões) se sobreponham
+    # à barra seguinte, deslocamos o texto para longe do zero quando a barra é pequena
+    # em relação à maior barra do gráfico.
+    if not base_grafico.empty:
+        valor_max_abs = base_grafico["Valor"].abs().max()
+    else:
+        valor_max_abs = 1
+
     fig_comp.update_traces(
         texttemplate="<b>%{text}</b>",
         textposition="outside",
         textfont=dict(size=14, family="Arial Black", color="#FFFFFF"),
         cliponaxis=False,
+        constraintext="none",
     )
     fig_comp.update_layout(
         template="plotly_dark",
         paper_bgcolor="#080f1f",
         plot_bgcolor="#080f1f",
-        height=620,
-        margin=dict(l=10, r=130, t=20, b=10),
+        height=640,
+        margin=dict(l=10, r=140, t=20, b=10),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
         uniformtext_minsize=11,
         uniformtext_mode="show",
-        bargap=0.25,
-        bargroupgap=0.08,
+        bargap=0.30,
+        bargroupgap=0.18,
     )
 
     if not base_grafico.empty:
         x_min = base_grafico["Valor"].min()
         x_max = base_grafico["Valor"].max()
-        x_pad = max((x_max - x_min) * 0.28, 1)
+        x_pad = max((x_max - x_min) * 0.32, 1)
         fig_comp.update_xaxes(
             showgrid=False,
             zeroline=False,
