@@ -886,14 +886,21 @@ def obter_linhas_tabela_pnl(df_pnl):
 
 
 def obter_linhas_principais_pnl(df_pnl):
+    """Lista das linhas principais para os cards do P&L (mensal e acumulado).
+
+    Ordem definida pelo presidente. A linha 'Despesas Administrativas' é sintética:
+    soma 'Despesas Administrativas Diretas' + 'Comissão (Apoio - Comercial - Mídia Paga)'
+    + 'Desp. Administrativas Indiretas' + 'Amortização'.
+    """
     linhas_desejadas = [
         "RECEITAS",
-        "Operações de Crédito",
         "DESPESAS DE ORIGINAÇÃO",
         "MARGEM INTERMEDIAÇÃO",
+        "Provisões",
         "MG INTERMEDIAÇÃO LIQ",
-        "MG CONTRIBUIÇÃO DIRETA",
+        "Despesas Administrativas",  # Linha sintética - calculada em garantir_linha_despesas_administrativas
         "RESULTADO ANTES IMPOSTO",
+        "Impostos (IR/CSLL)",
         "RESULTADO CONTÁBIL",
     ]
 
@@ -911,6 +918,74 @@ def obter_linhas_principais_pnl(df_pnl):
             selecionadas.append(match.iloc[0]["Linha"])
 
     return selecionadas
+
+
+def garantir_linha_despesas_administrativas(df_pnl):
+    """Adiciona uma linha sintética 'Despesas Administrativas' ao DataFrame, somando:
+       - Despesas Administrativas Diretas
+       - Comissão (Apoio - Comercial - Mídia Paga)
+       - Desp. Administrativas Indiretas
+       - Amortização
+    Para cada Produto, Período e Métrica.
+    """
+    if df_pnl.empty:
+        return df_pnl
+
+    componentes = [
+        normalizar_texto("Despesas Administrativas Diretas"),
+        normalizar_texto("Comissão (Apoio - Comercial - Mídia Paga)"),
+        normalizar_texto("Desp. Administrativas Indiretas"),
+        normalizar_texto("Amortização"),
+    ]
+
+    base_componentes = df_pnl[df_pnl["Linha_Normalizada"].isin(componentes)].copy()
+
+    if base_componentes.empty:
+        # tenta correspondência parcial
+        mask = pd.Series(False, index=df_pnl.index)
+        for comp in componentes:
+            mask = mask | df_pnl["Linha_Normalizada"].str.contains(comp, regex=False, na=False)
+        base_componentes = df_pnl[mask].copy()
+
+    if base_componentes.empty:
+        return df_pnl
+
+    # Determina ordem: depois de MG CONTRIBUIÇÃO DIRETA / antes de RESULTADO ANTES IMPOSTO
+    ordem_alvo = df_pnl[
+        df_pnl["Linha_Normalizada"].isin([
+            normalizar_texto("RESULTADO ANTES IMPOSTO"),
+        ])
+    ]["Ordem_Linha"]
+    nova_ordem = (ordem_alvo.min() - 0.5) if not ordem_alvo.empty else 99
+
+    # Identifica colunas presentes para agregar
+    cols_grupo = [c for c in ["Produto", "Métrica", "Periodo", "Data"] if c in df_pnl.columns]
+
+    if not cols_grupo:
+        return df_pnl
+
+    agregado = (
+        base_componentes
+        .groupby(cols_grupo, as_index=False)["Valor"]
+        .sum()
+    )
+
+    agregado["Linha"] = "Despesas Administrativas"
+    agregado["Linha_Normalizada"] = normalizar_texto("Despesas Administrativas")
+    agregado["Ordem_Linha"] = nova_ordem
+
+    # Garante que tem todas as colunas do df original
+    for col in df_pnl.columns:
+        if col not in agregado.columns:
+            agregado[col] = pd.NA
+
+    agregado = agregado[df_pnl.columns]
+
+    # Remove qualquer linha pré-existente com esse mesmo nome (evita duplicar)
+    df_sem = df_pnl[df_pnl["Linha_Normalizada"] != normalizar_texto("Despesas Administrativas")].copy()
+
+    return pd.concat([df_sem, agregado], ignore_index=True)
+
 
 
 def valor_pnl(df, produto, linha, metrica):
@@ -2355,6 +2430,9 @@ except Exception as erro:
 
 try:
     df_pnl_completo_global = carregar_pnl_mensal(arquivo)
+    # Adiciona a linha sintética 'Despesas Administrativas' (soma dos 4 componentes)
+    # logo após carregar, para que esteja disponível em todas as abas e cálculos.
+    df_pnl_completo_global = garantir_linha_despesas_administrativas(df_pnl_completo_global)
     erro_pnl_global = None
 except Exception as erro_pnl:
     df_pnl_completo_global = pd.DataFrame()
