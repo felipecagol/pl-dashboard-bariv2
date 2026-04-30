@@ -2327,8 +2327,8 @@ with tab_comp_2025:
 
             cards_comp = [
                 ("Resultado Contábil 1T26", "RESULTADO CONTÁBIL"),
-                ("Receitas 1T26", "RECEITAS"),
-                ("Despesas 1T26", "DESPESAS DE ORIGINAÇÃO"),
+                ("Margem de Intermediação 1T26", "MARGEM INTERMEDIAÇÃO"),
+                ("Margem de Intermediação Líq. 1T26", "MG INTERMEDIAÇÃO LIQ"),
             ]
             cols = st.columns(3)
             for col, (titulo, linha_nome) in zip(cols, cards_comp):
