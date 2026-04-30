@@ -992,65 +992,246 @@ def filtrar_pnl_acumulado(df_pnl_completo, periodo_atual):
     return base
 
 
+def linhas_media_pnl():
+    """Linhas que representam médias (não devem ser somadas no acumulado)."""
+    return {
+        normalizar_texto("Carteira de Crédito Bruta Média"),
+        normalizar_texto("Carteira de Crédito SD Cliente Média"),
+        normalizar_texto("Carteira de Crédito SD Cliente (média)"),
+        normalizar_texto("Carteira de Crédito Média"),
+        normalizar_texto("PL Médio"),
+        normalizar_texto("PL Médio (Banco + Hipo)"),
+        normalizar_texto("PL Médio (Prudencial + BRCards)"),
+        normalizar_texto("Alocação de Capital"),
+    }
+
+
+def buscar_linha_acumulada(df_acumulado, produto, linha_norm_alvo, metrica="Realizado"):
+    """Busca o valor já agregado para uma linha específica do acumulado."""
+    base = df_acumulado[
+        (df_acumulado["Produto"] == produto)
+        & (df_acumulado["Linha_Normalizada"] == linha_norm_alvo)
+        & (df_acumulado["Métrica"] == metrica)
+    ]
+    if base.empty:
+        return None
+    return float(base["Valor"].iloc[0])
+
+
+def recalcular_indicadores_percentuais(df_acumulado, n_meses):
+    """Recalcula linhas percentuais (Margem Bruta, Margem Líquida, Rácio, RPL, Alíquota)
+    a partir dos valores absolutos acumulados, aplicando o fator de anualização (12/n_meses).
+
+    Fórmulas:
+    - Margem Bruta = MARGEM INTERMEDIAÇÃO * (12/n) / Carteira Bruta Média
+    - Margem Líquida = MG INTERMEDIAÇÃO LIQ * (12/n) / Carteira Bruta Média
+    - Rácio Eficiência = (Desp Adm Diretas + Desp Adm Indiretas) / MARGEM INTERMEDIAÇÃO
+    - RPL Resultado Contábil = RESULTADO CONTÁBIL * (12/n) / PL Médio
+    - Alíquota IR/CSLL = Impostos / RESULTADO ANTES IMPOSTO
+    """
+    if df_acumulado.empty or n_meses <= 0:
+        return df_acumulado
+
+    fator_anual = 12.0 / n_meses
+    produtos = df_acumulado["Produto"].unique()
+
+    novos_registros = []
+
+    for produto in produtos:
+        # Valores absolutos acumulados (somados)
+        mg_int = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("MARGEM INTERMEDIAÇÃO"))
+        mg_int_liq = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("MG INTERMEDIAÇÃO LIQ"))
+        res_contabil = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("RESULTADO CONTÁBIL"))
+        rai = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("RESULTADO ANTES IMPOSTO"))
+        impostos = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Impostos (IR/CSLL)"))
+        desp_adm_dir = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Despesas Administrativas Diretas"))
+        desp_adm_ind = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Desp. Administrativas Indiretas"))
+
+        # Médias
+        carteira_bruta = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Carteira de Crédito Bruta Média"))
+        # Pode estar como "PL Médio" ou suas variações - tenta na ordem
+        pl_medio = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("PL Médio (Prudencial + BRCards)"))
+        if pl_medio is None or pl_medio == 0:
+            pl_medio = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("PL Médio (Banco + Hipo)"))
+        if pl_medio is None or pl_medio == 0:
+            pl_medio = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("PL Médio"))
+
+        # Mesmas fórmulas para Orçado
+        mg_int_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("MARGEM INTERMEDIAÇÃO"), "Orçado")
+        mg_int_liq_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("MG INTERMEDIAÇÃO LIQ"), "Orçado")
+        res_contabil_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("RESULTADO CONTÁBIL"), "Orçado")
+        rai_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("RESULTADO ANTES IMPOSTO"), "Orçado")
+        impostos_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Impostos (IR/CSLL)"), "Orçado")
+        desp_adm_dir_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Despesas Administrativas Diretas"), "Orçado")
+        desp_adm_ind_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Desp. Administrativas Indiretas"), "Orçado")
+        carteira_bruta_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Carteira de Crédito Bruta Média"), "Orçado")
+        pl_medio_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("PL Médio (Prudencial + BRCards)"), "Orçado")
+        if pl_medio_orc is None or pl_medio_orc == 0:
+            pl_medio_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("PL Médio (Banco + Hipo)"), "Orçado")
+        if pl_medio_orc is None or pl_medio_orc == 0:
+            pl_medio_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("PL Médio"), "Orçado")
+
+        # Calcula cada indicador (Realizado e Orçado)
+        def calc_margem_bruta(mg, cart):
+            if mg is None or cart is None or cart == 0:
+                return None
+            return mg * fator_anual / cart
+
+        def calc_margem_liquida(mg_liq, cart):
+            if mg_liq is None or cart is None or cart == 0:
+                return None
+            return mg_liq * fator_anual / cart
+
+        def calc_racio_eficiencia(d_dir, d_ind, mg):
+            if d_dir is None or d_ind is None or mg is None or mg == 0:
+                return None
+            # Despesas vêm com sinal negativo na planilha → resultado já fica negativo
+            return (d_dir + d_ind) / mg
+
+        def calc_rpl(res, pl):
+            if res is None or pl is None or pl == 0:
+                return None
+            return res * fator_anual / pl
+
+        def calc_aliquota(imp, rai_v):
+            if imp is None or rai_v is None or rai_v == 0:
+                return None
+            return imp / rai_v
+
+        indicadores = [
+            ("Margem Bruta", normalizar_texto("Margem Bruta"),
+             calc_margem_bruta(mg_int, carteira_bruta),
+             calc_margem_bruta(mg_int_orc, carteira_bruta_orc)),
+            ("Margem Liquida", normalizar_texto("Margem Liquida"),
+             calc_margem_liquida(mg_int_liq, carteira_bruta),
+             calc_margem_liquida(mg_int_liq_orc, carteira_bruta_orc)),
+            ("Rácio de Eficiência", normalizar_texto("Rácio de Eficiência"),
+             calc_racio_eficiencia(desp_adm_dir, desp_adm_ind, mg_int),
+             calc_racio_eficiencia(desp_adm_dir_orc, desp_adm_ind_orc, mg_int_orc)),
+            ("RPL - RES. CONTÁBIL", normalizar_texto("RPL - RES. CONTÁBIL"),
+             calc_rpl(res_contabil, pl_medio),
+             calc_rpl(res_contabil_orc, pl_medio_orc)),
+            ("Alíquota de IR/CSLL", normalizar_texto("Alíquota de IR/CSLL"),
+             calc_aliquota(impostos, rai),
+             calc_aliquota(impostos_orc, rai_orc)),
+        ]
+
+        # Pega ordem da linha já presente (ou define um fallback)
+        for nome_exibir, linha_norm, val_real, val_orc in indicadores:
+            ordem_existente = df_acumulado[df_acumulado["Linha_Normalizada"] == linha_norm]["Ordem_Linha"]
+            ordem = ordem_existente.iloc[0] if not ordem_existente.empty else 9999
+
+            if val_real is not None:
+                novos_registros.append({
+                    "Produto": produto,
+                    "Linha": nome_exibir,
+                    "Linha_Normalizada": linha_norm,
+                    "Métrica": "Realizado",
+                    "Ordem_Linha": ordem,
+                    "Valor": val_real,
+                })
+            if val_orc is not None:
+                novos_registros.append({
+                    "Produto": produto,
+                    "Linha": nome_exibir,
+                    "Linha_Normalizada": linha_norm,
+                    "Métrica": "Orçado",
+                    "Ordem_Linha": ordem,
+                    "Valor": val_orc,
+                })
+
+    if not novos_registros:
+        return df_acumulado
+
+    # Remove os percentuais antigos (se existirem) e substitui pelos recalculados
+    linhas_recalculadas = {r["Linha_Normalizada"] for r in novos_registros}
+    df_sem_percentuais = df_acumulado[
+        ~(df_acumulado["Linha_Normalizada"].isin(linhas_recalculadas)
+          & df_acumulado["Métrica"].isin(["Realizado", "Orçado"]))
+    ].copy()
+
+    return pd.concat([df_sem_percentuais, pd.DataFrame(novos_registros)], ignore_index=True)
+
+
 def agregar_pnl_acumulado(df_pnl_periodo):
+    """Agrega o P&L de múltiplos meses em valores acumulados (YTD).
+
+    - Linhas absolutas (Receitas, Despesas, Resultado): soma dos meses.
+    - Linhas de média (Carteira Média, PL Médio): média aritmética dos meses.
+    - Linhas percentuais (Margem Bruta, Margem Líquida, Rácio, RPL, Alíquota):
+      RECALCULADAS a partir das fórmulas com os valores acumulados,
+      aplicando o fator de anualização (12 / nº meses).
+    """
     if df_pnl_periodo.empty:
         return df_pnl_periodo.copy()
 
     linhas_percentuais = linhas_percentuais_pnl()
+    linhas_media = linhas_media_pnl()
 
     base_valores = df_pnl_periodo[df_pnl_periodo["Métrica"].isin(["Realizado", "Orçado"])].copy()
 
-    # Para linhas percentuais (Margem Bruta, Margem Líquida, Tx Imposto etc.),
-    # não faz sentido somar os valores mensais — usamos o valor do período mais recente.
-    # Para as demais linhas, acumulamos normalmente.
-    linhas_pct_mask = base_valores["Linha_Normalizada"].isin(linhas_percentuais)
+    # Quantidade de meses no período acumulado (para anualização)
+    n_meses = base_valores["Periodo"].nunique() if "Periodo" in base_valores.columns else 1
+    if n_meses <= 0:
+        n_meses = 1
 
-    base_somavel = base_valores[~linhas_pct_mask]
-    base_pct = base_valores[linhas_pct_mask]
+    # Separa em 3 grupos: percentuais, médias, somáveis
+    mask_pct = base_valores["Linha_Normalizada"].isin(linhas_percentuais)
+    mask_media = base_valores["Linha_Normalizada"].isin(linhas_media)
+    mask_soma = ~(mask_pct | mask_media)
 
+    base_somavel = base_valores[mask_soma]
+    base_media = base_valores[mask_media]
+
+    # Linhas que somam: agrupa e soma
     agrupado_soma = (
         base_somavel
         .groupby(["Produto", "Linha", "Linha_Normalizada", "Métrica", "Ordem_Linha"], as_index=False)["Valor"]
         .sum()
     )
 
-    # Para percentuais: pega o valor do período mais recente disponível
-    if not base_pct.empty and "Data" in base_pct.columns:
-        data_max = base_pct["Data"].max()
-        agrupado_pct = (
-            base_pct[base_pct["Data"] == data_max]
+    # Linhas de média: tira a média aritmética dos valores mensais
+    if not base_media.empty:
+        agrupado_media = (
+            base_media
             .groupby(["Produto", "Linha", "Linha_Normalizada", "Métrica", "Ordem_Linha"], as_index=False)["Valor"]
-            .first()
+            .mean()
         )
     else:
-        agrupado_pct = base_pct.groupby(
-            ["Produto", "Linha", "Linha_Normalizada", "Métrica", "Ordem_Linha"], as_index=False
-        )["Valor"].last()
+        agrupado_media = base_media.iloc[0:0][["Produto", "Linha", "Linha_Normalizada", "Métrica", "Ordem_Linha", "Valor"]]
 
-    agrupado = pd.concat([agrupado_soma, agrupado_pct], ignore_index=True)
+    # Junta absolutos + médias (ainda sem os percentuais — eles serão recalculados)
+    agrupado = pd.concat([agrupado_soma, agrupado_media], ignore_index=True)
 
+    # Recalcula os indicadores percentuais usando as fórmulas anualizadas corretas
+    agrupado = recalcular_indicadores_percentuais(agrupado, n_meses)
+
+    # Calcula deltas (Δ R$ e Δ %)
     linhas_delta = []
 
     base_pivot = agrupado.pivot_table(
         index=["Produto", "Linha", "Linha_Normalizada", "Ordem_Linha"],
         columns="Métrica",
         values="Valor",
-        aggfunc="sum",
+        aggfunc="first",
     ).reset_index()
 
     for _, row in base_pivot.iterrows():
-        realizado = row.get("Realizado", 0)
-        orcado = row.get("Orçado", 0)
+        realizado = row.get("Realizado")
+        orcado = row.get("Orçado")
         linha_norm = row["Linha_Normalizada"]
         eh_percentual = linha_norm in linhas_percentuais
 
-        delta_rs = realizado - orcado
-
-        if eh_percentual:
-            # Para linhas percentuais: variação em pontos percentuais
-            delta_pct = delta_rs if pd.notna(delta_rs) else pd.NA
+        if pd.isna(realizado) or pd.isna(orcado):
+            delta_rs = pd.NA
+            delta_pct = pd.NA
         else:
-            delta_pct = pd.NA if orcado == 0 else delta_rs / abs(orcado)
+            delta_rs = realizado - orcado
+            if eh_percentual:
+                # Para linhas percentuais: variação em pontos percentuais
+                delta_pct = delta_rs
+            else:
+                delta_pct = pd.NA if orcado == 0 else delta_rs / abs(orcado)
 
         for metrica, valor in [("Δ %", delta_pct), ("Δ R$", delta_rs)]:
             linhas_delta.append(
