@@ -1883,23 +1883,73 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         "RESULTADO CONTÁBIL",
     ]
 
+    # Linhas que compõem DESPESAS TOTAIS (somadas em módulo, pois são negativas)
+    componentes_desp_totais = [
+        "despesas de originacao",
+        "provisoes",
+        "despesas administrativas",
+        "despesas administrativas diretas",
+        "desp administrativas indiretas",
+        "amortizacao estoque projeto banco",
+    ]
+
     if df_2025_acumulado is None:
         df_2025_acumulado = pd.DataFrame()
+
+    def somar_componentes_desp(df_ano, ano, acumulado_df=None):
+        """Soma as linhas de despesa para calcular DESPESAS TOTAIS."""
+        total_26 = pd.NA
+        total_25 = pd.NA
+        total_25_acum = pd.NA
+
+        # Para cada componente, pega o primeiro valor correspondente
+        soma_26 = 0.0
+        soma_25 = 0.0
+        soma_25a = 0.0
+        encontrou_26 = False
+        encontrou_25 = False
+        encontrou_25a = False
+
+        for norm_comp in componentes_desp_totais:
+            b26 = df_comp[(df_comp["Ano"] == 2026) & (df_comp["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False))]
+            b25 = df_comp[(df_comp["Ano"] == 2025) & (df_comp["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False))]
+
+            if not b26.empty and pd.notna(b26["Realizado"].iloc[0]):
+                soma_26 += b26["Realizado"].iloc[0]
+                encontrou_26 = True
+            if not b25.empty and pd.notna(b25["Realizado"].iloc[0]):
+                soma_25 += b25["Realizado"].iloc[0]
+                encontrou_25 = True
+
+            if not acumulado_df.empty:
+                ba = acumulado_df[acumulado_df["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False)]
+                if not ba.empty and pd.notna(ba["Realizado"].iloc[0]):
+                    soma_25a += ba["Realizado"].iloc[0]
+                    encontrou_25a = True
+
+        return (
+            soma_26 if encontrou_26 else pd.NA,
+            soma_25 if encontrou_25 else pd.NA,
+            soma_25a if encontrou_25a else pd.NA,
+        )
 
     linhas = []
     for ordem, linha_ref in enumerate(linhas_ordem):
         linha_norm = normalizar_texto(linha_ref)
-        b25 = df_comp[(df_comp["Ano"] == 2025) & (df_comp["Linha_Normalizada"] == linha_norm)]
-        b26 = df_comp[(df_comp["Ano"] == 2026) & (df_comp["Linha_Normalizada"] == linha_norm)]
-        b25_acum = (
-            df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"] == linha_norm]
-            if not df_2025_acumulado.empty and "Linha_Normalizada" in df_2025_acumulado.columns
-            else pd.DataFrame()
-        )
 
-        v25 = b25["Realizado"].iloc[0] if not b25.empty else pd.NA
-        v26 = b26["Realizado"].iloc[0] if not b26.empty else pd.NA
-        v25_acum = b25_acum["Realizado"].iloc[0] if not b25_acum.empty else pd.NA
+        if linha_norm == normalizar_texto("DESPESAS TOTAIS"):
+            v26, v25, v25_acum = somar_componentes_desp(df_comp, 2026, df_2025_acumulado)
+        else:
+            b25 = df_comp[(df_comp["Ano"] == 2025) & (df_comp["Linha_Normalizada"] == linha_norm)]
+            b26 = df_comp[(df_comp["Ano"] == 2026) & (df_comp["Linha_Normalizada"] == linha_norm)]
+            b25_acum = (
+                df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"] == linha_norm]
+                if not df_2025_acumulado.empty and "Linha_Normalizada" in df_2025_acumulado.columns
+                else pd.DataFrame()
+            )
+            v25 = b25["Realizado"].iloc[0] if not b25.empty else pd.NA
+            v26 = b26["Realizado"].iloc[0] if not b26.empty else pd.NA
+            v25_acum = b25_acum["Realizado"].iloc[0] if not b25_acum.empty else pd.NA
 
         delta_rs = v26 - v25 if pd.notna(v25) and pd.notna(v26) else pd.NA
         delta_pct = delta_rs / abs(v25) if pd.notna(delta_rs) and v25 not in [0, 0.0] and pd.notna(v25) else pd.NA
@@ -2333,6 +2383,31 @@ with tab_comp_2025:
             ]
             cols = st.columns(3)
             for col, (titulo, linha_nome) in zip(cols, cards_comp):
+                with col:
+                    linha_df = obter_linha_comparativo(df_comp_principais, linha_nome)
+                    if linha_df.empty:
+                        card(titulo, 0, ajuda="Sem dados na base", variacao=None)
+                    else:
+                        valor_2025 = linha_df["2025"].iloc[0]
+                        valor_2026 = linha_df["2026"].iloc[0]
+                        variacao = linha_df["Δ %"].iloc[0]
+                        ajuda = f"1T26: {formatar_moeda(valor_2026)} | 1T25: {formatar_moeda(valor_2025)}"
+                        card(
+                            titulo,
+                            valor_2026,
+                            ajuda=ajuda,
+                            variacao=variacao,
+                            variacao_label="Δ 1T26 vs 1T25",
+                        )
+
+            st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
+
+            cards_comp2 = [
+                ("Despesas Totais 1T26", "DESPESAS TOTAIS"),
+                ("Provisões 1T26", "Provisões"),
+            ]
+            cols2 = st.columns(3)
+            for col, (titulo, linha_nome) in zip(cols2, cards_comp2):
                 with col:
                     linha_df = obter_linha_comparativo(df_comp_principais, linha_nome)
                     if linha_df.empty:
