@@ -1402,7 +1402,13 @@ def agregar_pnl_acumulado(df_pnl_periodo):
                 # Para linhas percentuais: variação em pontos percentuais
                 delta_pct = delta_rs
             else:
-                delta_pct = pd.NA if orcado == 0 else delta_rs / abs(orcado)
+                # Para linhas de despesa (ambos negativos): sinal reflete variação do módulo.
+                # Se a despesa aumentou (módulo cresceu), exibe "+"; se diminuiu, exibe "-".
+                if realizado < 0 and orcado < 0:
+                    delta_rs = abs(realizado) - abs(orcado)
+                    delta_pct = delta_rs / abs(orcado)
+                else:
+                    delta_pct = pd.NA if orcado == 0 else delta_rs / abs(orcado)
 
         for metrica, valor in [("Δ %", delta_pct), ("Δ R$", delta_rs)]:
             linhas_delta.append(
@@ -1419,6 +1425,60 @@ def agregar_pnl_acumulado(df_pnl_periodo):
     df_delta = pd.DataFrame(linhas_delta)
 
     return pd.concat([agrupado, df_delta], ignore_index=True)
+
+
+def variacao_pnl_acumulado_mesmo_periodo_ano_anterior(df_pnl_completo, produto, linha, periodo_atual):
+    """Calcula a variação do acumulado YTD atual vs mesmo período do ano anterior.
+    
+    Ex: jan-mar/2026 vs jan-mar/2025.
+    Retorna None se não houver dados do ano anterior.
+    """
+    linha_atual = df_pnl_completo[
+        (df_pnl_completo["Produto"] == produto)
+        & (df_pnl_completo["Linha"] == linha)
+        & (df_pnl_completo["Métrica"] == "Realizado")
+        & (df_pnl_completo["Periodo"] == periodo_atual)
+    ]
+
+    if linha_atual.empty:
+        return None
+
+    data_atual = linha_atual["Data"].iloc[0]
+    data_atual_ts = pd.Timestamp(data_atual)
+    ano_atual = data_atual_ts.year
+    data_inicio_atual = pd.Timestamp(ano_atual, 1, 1)
+
+    # Acumulado YTD atual (jan até data_atual)
+    valor_acumulado_atual = df_pnl_completo[
+        (df_pnl_completo["Produto"] == produto)
+        & (df_pnl_completo["Linha"] == linha)
+        & (df_pnl_completo["Métrica"] == "Realizado")
+        & (df_pnl_completo["Data"] >= data_inicio_atual)
+        & (df_pnl_completo["Data"] <= data_atual_ts)
+    ]["Valor"].sum()
+
+    # Mesmo período do ano anterior
+    ano_anterior = ano_atual - 1
+    data_inicio_anterior = pd.Timestamp(ano_anterior, 1, 1)
+    data_fim_anterior = pd.Timestamp(ano_anterior, data_atual_ts.month, 1)
+
+    base_anterior = df_pnl_completo[
+        (df_pnl_completo["Produto"] == produto)
+        & (df_pnl_completo["Linha"] == linha)
+        & (df_pnl_completo["Métrica"] == "Realizado")
+        & (df_pnl_completo["Data"] >= data_inicio_anterior)
+        & (df_pnl_completo["Data"] <= data_fim_anterior)
+    ]
+
+    if base_anterior.empty:
+        return None
+
+    valor_acumulado_anterior = base_anterior["Valor"].sum()
+
+    if valor_acumulado_anterior == 0:
+        return None
+
+    return (valor_acumulado_atual - valor_acumulado_anterior) / abs(valor_acumulado_anterior)
 
 
 def variacao_pnl_acumulado_mes_anterior(df_pnl_completo, produto, linha, periodo_atual):
@@ -1545,12 +1605,14 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
             realizado = valor_pnl(df_pnl, produto_sel_pnl, linha, "Realizado")
 
             if pagina == "Acumulado":
-                variacao = variacao_pnl_acumulado_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
+                variacao = variacao_pnl_acumulado_mesmo_periodo_ano_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
+                variacao_label = "Δ igual período 2025"
             else:
                 variacao = variacao_pnl_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
+                variacao_label = "Δ mês anterior"
 
             with col_card:
-                card_pnl(linha, realizado, variacao=variacao)
+                card_pnl(linha, realizado, variacao=variacao, variacao_label=variacao_label)
 
     st.markdown(f'<div class="section-title">{titulo_comparativo}</div>', unsafe_allow_html=True)
 
@@ -1777,6 +1839,23 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
             else:
                 delta_pct = pd.NA if orcado == 0 else delta_rs / abs(orcado)
 
+            # Regra de sinal para linhas de despesa (ambos negativos):
+            # O sinal deve refletir a variação do valor absoluto.
+            # Se a despesa aumentou (módulo cresceu), exibe "+"; se diminuiu, exibe "-".
+            # Ex: real=-100, orç=-64,7 → módulo cresceu → delta_pct = +54,7%
+            # A cor (verde/vermelho) é controlada separadamente por _delta_bad.
+            eh_linha_despesa = (
+                not racio_eficiencia
+                and not linha_percentual
+                and pd.notna(realizado)
+                and pd.notna(orcado)
+                and realizado < 0
+                and orcado < 0
+            )
+            if eh_linha_despesa:
+                delta_pct = pd.NA if orcado == 0 else (abs(realizado) - abs(orcado)) / abs(orcado)
+                delta_rs = abs(realizado) - abs(orcado)
+
             row[(produto, "Realizado")] = realizado
             row[(produto, "Orçado")] = orcado
             row[(produto, "Δ %")] = delta_pct
@@ -1812,6 +1891,7 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
 
             if produto == "Total":
                 # Δ R$ não se aplica a indicadores percentuais.
+                # Para linhas de despesa (ambos negativos), mostra variação em módulo.
                 row[(produto, "Δ R$")] = pd.NA if linha_percentual else delta_rs
 
         linhas.append(row)
