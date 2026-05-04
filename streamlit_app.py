@@ -1754,8 +1754,10 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
         linha_percentual = linha_pnl_percentual(linha)
         linha_norm_card = normalizar_texto(linha)
 
-        # Regra especial para Rácio de Eficiência: variação é Orçado - Realizado,
-        # apresentada em módulo (sem sinal) e sempre em verde.
+        # Regra especial para Rácio de Eficiência: variação é Orçado - Realizado
+        # (invertida em relação às demais linhas), sempre exibida em verde porque
+        # o presidente prefere sinalização positiva nessa métrica. O sinal +/- é
+        # mantido para indicar se ficou abaixo (+) ou acima (-) do orçado.
         racio_eficiencia = linha_norm_card == normalizar_texto("Rácio de Eficiência")
 
         for produto in produtos:
@@ -1774,10 +1776,6 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
                 delta_pct = delta_rs if pd.notna(delta_rs) else pd.NA
             else:
                 delta_pct = pd.NA if orcado == 0 else delta_rs / abs(orcado)
-
-            # Para Rácio de Eficiência apresentamos a variação em módulo
-            if racio_eficiencia and pd.notna(delta_pct):
-                delta_pct = abs(delta_pct)
 
             row[(produto, "Realizado")] = realizado
             row[(produto, "Orçado")] = orcado
@@ -1880,7 +1878,8 @@ def tabela_html_pnl_matriz(df_matrix, produtos, metricas_por_produto):
                     if ocultar_variacao:
                         texto = ""
                     elif eh_racio_eficiencia:
-                        texto = formatar_pontos_percentuais_sem_sinal(valor)
+                        # Rácio: mostra com sinal +/-, mas sempre em verde
+                        texto = formatar_pontos_percentuais(valor)
                         if pd.notna(valor):
                             classes.append("delta-positive")
                     else:
