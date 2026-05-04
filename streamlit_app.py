@@ -250,14 +250,6 @@ CSS = """
     .delta-positive { color: #22c55e; }
     .delta-negative { color: #ef4444; }
     .delta-neutral { color: #9fb2df; }
-    .delta-sign {
-        font-size: 1.18rem;
-        font-weight: 900;
-    }
-    table.pnl-matrix .delta-sign {
-        font-size: 1.08rem;
-        font-weight: 900;
-    }
     .note-box {
         background: #111a2e;
         border: 1px solid #243150;
@@ -594,7 +586,6 @@ def nome_periodo(data):
 
 
 def formatar_variacao(valor, label="Δ mês anterior"):
-    """Versão texto simples — mantida para compatibilidade com card() do Resultado."""
     try:
         valor = float(valor)
     except Exception:
@@ -604,26 +595,6 @@ def formatar_variacao(valor, label="Δ mês anterior"):
     texto = f"{label} {sinal}{valor * 100:,.1f}%"
     return texto.replace(",", "X").replace(".", ",").replace("X", ".")
 
-
-def formatar_variacao_html(valor, label, eh_bom):
-    """Gera HTML com sinal em fonte maior.
-
-    valor  : float — valor matemático; determina o SINAL (+/−)
-    eh_bom : bool  — determina a COR (verde/vermelho), independente do sinal
-    """
-    try:
-        v = float(valor)
-    except Exception:
-        v = 0.0
-
-    sinal = "+" if v >= 0 else "−"
-    numero = f"{abs(v) * 100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
-    cor = "delta-positive" if eh_bom else "delta-negative"
-    return (
-        f'<div class="kpi-delta {cor}">'
-        f'{label} <span class="delta-sign">{sinal}</span> {numero}'
-        f'</div>'
-    )
 
 def classe_variacao(valor):
     try:
@@ -1571,29 +1542,15 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
 
         cols_cards = st.columns(3)
         for col_card, linha in zip(cols_cards, linhas_principais[inicio:inicio + 3]):
-            realizado      = valor_pnl(df_pnl, produto_sel_pnl, linha, "Realizado")
-            realizado_ant  = None  # calculado implicitamente dentro de variacao_pnl_*
+            realizado = valor_pnl(df_pnl, produto_sel_pnl, linha, "Realizado")
 
             if pagina == "Acumulado":
                 variacao = variacao_pnl_acumulado_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
             else:
                 variacao = variacao_pnl_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
 
-            # Cor nos cards: sinal matemático reflete se o número CRESCEU ou CAIU.
-            # Para linhas de custo/despesa (valor realizado negativo), crescer é ruim.
-            # Para receitas/resultado (valor positivo), crescer é bom.
-            # Regra: eh_bom = (variação positiva E linha de receita)
-            #               OU (variação negativa E linha de custo)
-            # Simplificando: se linha de custo → eh_bom = variacao <= 0
-            #                se linha de receita → eh_bom = variacao >= 0
-            eh_custo = realizado < 0
-            if variacao is not None and not pd.isna(variacao):
-                eh_bom = (float(variacao) <= 0) if eh_custo else (float(variacao) >= 0)
-            else:
-                eh_bom = None
-
             with col_card:
-                card_pnl(linha, realizado, variacao=variacao, eh_bom=eh_bom)
+                card_pnl(linha, realizado, variacao=variacao)
 
     st.markdown(f'<div class="section-title">{titulo_comparativo}</div>', unsafe_allow_html=True)
 
@@ -1710,17 +1667,11 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
     )
 
 
-def card_pnl(titulo, valor, variacao=None, variacao_label="Δ mês anterior", eh_bom=None):
-    """
-    variacao : float — sinal matemático (atual-anterior)/base → determina o sinal +/-
-    eh_bom   : bool  — se True verde, se False vermelho (independente do sinal numérico)
-                       se None, deriva do próprio sinal (positivo=bom)
-    """
+def card_pnl(titulo, valor, variacao=None, variacao_label="Δ mês anterior"):
     if variacao is None or pd.isna(variacao):
         delta_html = '<div class="kpi-delta delta-neutral">N/D</div>'
     else:
-        bom = eh_bom if eh_bom is not None else (float(variacao) >= 0)
-        delta_html = formatar_variacao_html(variacao, variacao_label, bom)
+        delta_html = f'<div class="kpi-delta {classe_variacao(variacao)}">{formatar_variacao(variacao, variacao_label)}</div>'
 
     st.markdown(
         f"""
@@ -1927,34 +1878,22 @@ def tabela_html_pnl_matriz(df_matrix, produtos, metricas_por_produto):
                     if ocultar_variacao:
                         texto = ""
                     elif eh_racio_eficiencia:
+                        # Rácio: mostra com sinal +/-. Verde se positivo (Realizado < Orçado),
+                        # vermelho se negativo (Realizado > Orçado = pior).
+                        texto = formatar_pontos_percentuais(valor)
                         if pd.notna(valor):
-                            sinal_char = "+" if valor >= 0 else "−"
-                            num = f"{abs(valor) * 100:,.1f} pp".replace(",", "X").replace(".", ",").replace("X", ".")
-                            texto = f'<span class="delta-positive"><span class="delta-sign">{sinal_char}</span> {num}</span>'
-                        else:
-                            texto = ""
+                            classes.append("delta-positive" if valor >= 0 else "delta-negative")
                     else:
+                        texto = formatar_pontos_percentuais(valor) if linha_percentual else formatar_percentual(valor)
                         if pd.notna(valor):
-                            cor = "delta-negative" if row[(produto, "_delta_bad")] else "delta-positive"
-                            sinal_char = "+" if valor >= 0 else "−"
-                            if linha_percentual:
-                                num = f"{abs(valor) * 100:,.1f} pp".replace(",", "X").replace(".", ",").replace("X", ".")
-                            else:
-                                num = f"{abs(valor) * 100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
-                            texto = f'<span class="{cor}"><span class="delta-sign">{sinal_char}</span> {num}</span>'
-                        else:
-                            texto = ""
+                            classes.append("delta-negative" if row[(produto, "_delta_bad")] else "delta-positive")
                 elif metrica == "Δ R$":
-                    if ocultar_variacao or linha_percentual:
+                    if ocultar_variacao:
                         texto = ""
                     else:
-                        if pd.notna(valor):
-                            cor = "delta-negative" if row[(produto, "_delta_bad")] else "delta-positive"
-                            sinal_char = "+" if valor >= 0 else "−"
-                            num = f"{abs(valor):,.0f}".replace(",", ".")
-                            texto = f'<span class="{cor}"><span class="delta-sign">{sinal_char}</span> {num}</span>'
-                        else:
-                            texto = ""
+                        texto = "" if linha_percentual else formatar_numero(valor)
+                        if (not linha_percentual) and pd.notna(valor):
+                            classes.append("delta-negative" if row[(produto, "_delta_bad")] else "delta-positive")
                 elif linha_percentual and metrica in ["Realizado", "Orçado"]:
                     texto = formatar_percentual_valor(valor)
                     if pd.notna(valor) and valor < 0:
