@@ -471,6 +471,20 @@ def formatar_pontos_percentuais(valor):
     return texto.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def formatar_pontos_percentuais_sem_sinal(valor):
+    """Formata variação em pontos percentuais sempre em módulo (sem '+' ou '-').
+    Usado para o Rácio de Eficiência, onde a regra de exibição não considera o sinal."""
+    if pd.isna(valor):
+        return ""
+    try:
+        valor = float(valor)
+    except Exception:
+        return str(valor)
+
+    texto = f"{abs(valor) * 100:,.1f} pp"
+    return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def tabela_html(df, df_valores=None, coluna_delta="Δ mês anterior"):
     html = ['<div class="table-wrap"><table class="dash-table">']
     html.append("<thead><tr>")
@@ -1689,12 +1703,21 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
     for linha in linhas_principais:
         row = {"Linha": linha}
         linha_percentual = linha_pnl_percentual(linha)
+        linha_norm_card = normalizar_texto(linha)
+
+        # Regra especial para Rácio de Eficiência: variação é Orçado - Realizado,
+        # apresentada em módulo (sem sinal) e sempre em verde.
+        racio_eficiencia = linha_norm_card == normalizar_texto("Rácio de Eficiência")
 
         for produto in produtos:
             realizado = valor_pnl(df_pnl, produto, linha, "Realizado")
             orcado = valor_pnl(df_pnl, produto, linha, "Orçado")
 
-            delta_rs = realizado - orcado
+            if racio_eficiencia:
+                # Inverte o cálculo da variação para o Rácio de Eficiência
+                delta_rs = orcado - realizado
+            else:
+                delta_rs = realizado - orcado
 
             # Para indicadores percentuais, a variação correta é em pontos percentuais,
             # não em percentual relativo. Ex.: 8,4% - 8,6% = -0,2 pp.
@@ -1702,6 +1725,10 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
                 delta_pct = delta_rs if pd.notna(delta_rs) else pd.NA
             else:
                 delta_pct = pd.NA if orcado == 0 else delta_rs / abs(orcado)
+
+            # Para Rácio de Eficiência apresentamos a variação em módulo
+            if racio_eficiencia and pd.notna(delta_pct):
+                delta_pct = abs(delta_pct)
 
             row[(produto, "Realizado")] = realizado
             row[(produto, "Orçado")] = orcado
@@ -1711,15 +1738,15 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
             # Quando ambos são negativos (linha de custo/despesa), o mais negativo (maior em módulo) é pior.
             # Quando ambos são positivos, o menor realizado é pior.
             # Quando há troca de sinal, compara diretamente.
-            # EXCEÇÃO: Rácio de Eficiência e Alíquota de IR/CSLL são exibidos em módulo —
-            # nesses casos, realizado MAIOR = PIOR (mais despesa relativa, mais imposto).
-            linha_norm_card = normalizar_texto(linha)
-            inverter_logica = linha_norm_card in [
-                normalizar_texto("Rácio de Eficiência"),
-                normalizar_texto("Alíquota de IR/CSLL"),
-            ]
+            # EXCEÇÃO 1: Alíquota de IR/CSLL é exibida em módulo — realizado MAIOR = PIOR.
+            # EXCEÇÃO 2: Rácio de Eficiência tem variação invertida (Orçado-Realizado)
+            # e é sempre apresentada em verde, conforme regra de negócio definida.
+            inverter_logica = linha_norm_card == normalizar_texto("Alíquota de IR/CSLL")
 
             if pd.isna(realizado) or pd.isna(orcado):
+                delta_bad = False
+            elif racio_eficiencia:
+                # Sempre verde para Rácio de Eficiência
                 delta_bad = False
             elif inverter_logica:
                 # Indicadores em módulo onde maior = pior
@@ -1792,6 +1819,8 @@ def tabela_html_pnl_matriz(df_matrix, produtos, metricas_por_produto):
         # Linhas onde a variação (Δ %, Δ R$) não faz sentido — são apresentadas
         # apenas como Realizado vs Orçado, sem coluna de variação.
         ocultar_variacao = linha_norm == normalizar_texto("Alíquota de IR/CSLL")
+        # Rácio de Eficiência: variação sempre em módulo (sem sinal) e sempre verde
+        eh_racio_eficiencia = linha_norm == normalizar_texto("Rácio de Eficiência")
 
         for produto in produtos:
             for metrica in metricas_por_produto[produto]:
@@ -1801,6 +1830,10 @@ def tabela_html_pnl_matriz(df_matrix, produtos, metricas_por_produto):
                 if metrica == "Δ %":
                     if ocultar_variacao:
                         texto = ""
+                    elif eh_racio_eficiencia:
+                        texto = formatar_pontos_percentuais_sem_sinal(valor)
+                        if pd.notna(valor):
+                            classes.append("delta-positive")
                     else:
                         texto = formatar_pontos_percentuais(valor) if linha_percentual else formatar_percentual(valor)
                         if pd.notna(valor):
