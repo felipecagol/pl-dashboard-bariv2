@@ -1187,12 +1187,8 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
 
         # Médias
         carteira_bruta = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Carteira de Crédito Bruta Média"))
-        # Pode estar como "PL Médio" ou suas variações - tenta na ordem
-        pl_medio = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("PL Médio (Prudencial + BRCards)"))
-        if pl_medio is None or pl_medio == 0:
-            pl_medio = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("PL Médio (Banco + Hipo)"))
-        if pl_medio is None or pl_medio == 0:
-            pl_medio = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("PL Médio"))
+        # RPL Resultado Contábil usa Alocação de Capital como denominador (regra do negócio)
+        alocacao_capital = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Alocação de Capital"))
 
         # Mesmas fórmulas para Orçado
         mg_int_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("MARGEM INTERMEDIAÇÃO"), "Orçado")
@@ -1203,11 +1199,7 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
         desp_adm_dir_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Despesas Administrativas Diretas"), "Orçado")
         desp_adm_ind_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Desp. Administrativas Indiretas"), "Orçado")
         carteira_bruta_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Carteira de Crédito Bruta Média"), "Orçado")
-        pl_medio_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("PL Médio (Prudencial + BRCards)"), "Orçado")
-        if pl_medio_orc is None or pl_medio_orc == 0:
-            pl_medio_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("PL Médio (Banco + Hipo)"), "Orçado")
-        if pl_medio_orc is None or pl_medio_orc == 0:
-            pl_medio_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("PL Médio"), "Orçado")
+        alocacao_capital_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Alocação de Capital"), "Orçado")
 
         # Calcula cada indicador (Realizado e Orçado)
         def calc_margem_bruta(mg, cart):
@@ -1226,10 +1218,11 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
                 return None
             return abs((d_dir + d_ind) / mg)
 
-        def calc_rpl(res, pl):
-            if res is None or pl is None or pl == 0:
+        def calc_rpl(res, aloc):
+            # RPL Resultado Contábil = (Resultado Contábil / Alocação de Capital) * fator anual
+            if res is None or aloc is None or aloc == 0:
                 return None
-            return res * fator_anual / pl
+            return res * fator_anual / aloc
 
         def calc_aliquota(imp, rai_v):
             # Alíquota IR/CSLL = |Impostos / Resultado Antes Imposto|, em módulo
@@ -1248,8 +1241,8 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
              calc_racio_eficiencia(desp_adm_dir, desp_adm_ind, mg_int),
              calc_racio_eficiencia(desp_adm_dir_orc, desp_adm_ind_orc, mg_int_orc)),
             ("RPL - RES. CONTÁBIL", normalizar_texto("RPL - RES. CONTÁBIL"),
-             calc_rpl(res_contabil, pl_medio),
-             calc_rpl(res_contabil_orc, pl_medio_orc)),
+             calc_rpl(res_contabil, alocacao_capital),
+             calc_rpl(res_contabil_orc, alocacao_capital_orc)),
             ("Alíquota de IR/CSLL", normalizar_texto("Alíquota de IR/CSLL"),
              calc_aliquota(impostos, rai),
              calc_aliquota(impostos_orc, rai_orc)),
