@@ -1549,8 +1549,17 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
             else:
                 variacao = variacao_pnl_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
 
+            # Para linhas cujo valor realizado é negativo (despesas, impostos),
+            # o sinal da variação deve refletir a variação do módulo:
+            # se a despesa cresceu (ficou mais negativa), exibe "+" mas mantém cor vermelha.
+            # variacao controla a COR; variacao_display controla o NÚMERO mostrado.
+            if variacao is not None and not pd.isna(variacao) and realizado < 0:
+                variacao_display = -variacao
+            else:
+                variacao_display = None
+
             with col_card:
-                card_pnl(linha, realizado, variacao=variacao)
+                card_pnl(linha, realizado, variacao=variacao, variacao_display=variacao_display)
 
     st.markdown(f'<div class="section-title">{titulo_comparativo}</div>', unsafe_allow_html=True)
 
@@ -1667,11 +1676,18 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
     )
 
 
-def card_pnl(titulo, valor, variacao=None, variacao_label="Δ mês anterior"):
+def card_pnl(titulo, valor, variacao=None, variacao_label="Δ mês anterior", variacao_display=None):
+    """Renderiza card do P&L.
+
+    variacao        → controla a COR (verde/vermelho): usa o sinal econômico real.
+    variacao_display → controla o NÚMERO exibido; se None, usa variacao.
+                       Permite mostrar "+54,7%" em vermelho para despesas que cresceram.
+    """
     if variacao is None or pd.isna(variacao):
         delta_html = '<div class="kpi-delta delta-neutral">N/D</div>'
     else:
-        delta_html = f'<div class="kpi-delta {classe_variacao(variacao)}">{formatar_variacao(variacao, variacao_label)}</div>'
+        valor_exibir = variacao_display if variacao_display is not None else variacao
+        delta_html = f'<div class="kpi-delta {classe_variacao(variacao)}">{formatar_variacao(valor_exibir, variacao_label)}</div>'
 
     st.markdown(
         f"""
