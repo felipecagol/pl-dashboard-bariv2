@@ -923,6 +923,9 @@ def linhas_ocultas_pnl():
         normalizar_texto("Taxa Média Carteira Bruta Média"),
         normalizar_texto("Taxa Média Carteira SD Cliente Média"),
         normalizar_texto("Rateio Carteira"),
+        # "Despesas Administrativas" (linha sintética) é redundante com a linha original
+        # "Despesas Adm. Diretas + Indiretas" da planilha — ocultamos para evitar duplicidade.
+        normalizar_texto("Despesas Administrativas"),
     }
 
 
@@ -952,8 +955,7 @@ def obter_linhas_principais_pnl(df_pnl):
     """Lista das linhas principais para os cards do P&L (mensal e acumulado).
 
     Ordem definida pelo presidente. A linha 'Despesas Administrativas' é sintética:
-    soma 'Despesas Administrativas Diretas' + 'Comissão (Apoio - Comercial - Mídia Paga)'
-    + 'Desp. Administrativas Indiretas' + 'Amortização'.
+    soma 'Despesas Administrativas Diretas' + 'Desp. Administrativas Indiretas'.
     """
     linhas_desejadas = [
         "RECEITAS",
@@ -984,11 +986,16 @@ def obter_linhas_principais_pnl(df_pnl):
 
 
 def garantir_linha_despesas_administrativas(df_pnl):
-    """Adiciona uma linha sintética 'Despesas Administrativas' ao DataFrame, somando:
-       - Despesas Administrativas Diretas
-       - Comissão (Apoio - Comercial - Mídia Paga)
-       - Desp. Administrativas Indiretas
-       - Amortização
+    """Adiciona/atualiza linhas sintéticas relacionadas a Despesas Administrativas:
+
+    1) "Despesas Administrativas" = Diretas + Indiretas (linha sintética dos cards)
+    2) "Despesas Adm. Diretas + Indiretas" = também Diretas + Indiretas (recalcula a
+       linha que já vem da planilha para garantir consistência com os valores oficiais)
+
+    Conforme planilha oficial (P&L Acumulado, célula L73 = L36 + L39):
+       Despesas Administrativas = Despesas Administrativas Diretas + Desp. Administrativas Indiretas
+
+    Comissão e Amortização são linhas separadas e NÃO entram nesta soma.
     Para cada Produto, Período e Métrica.
     """
     if df_pnl.empty:
@@ -996,9 +1003,7 @@ def garantir_linha_despesas_administrativas(df_pnl):
 
     componentes = [
         normalizar_texto("Despesas Administrativas Diretas"),
-        normalizar_texto("Comissão (Apoio - Comercial - Mídia Paga)"),
         normalizar_texto("Desp. Administrativas Indiretas"),
-        normalizar_texto("Amortização"),
     ]
 
     base_componentes = df_pnl[df_pnl["Linha_Normalizada"].isin(componentes)].copy()
@@ -1027,15 +1032,31 @@ def garantir_linha_despesas_administrativas(df_pnl):
     if not cols_grupo:
         return df_pnl
 
-    agregado = (
+    agregado_base = (
         base_componentes
         .groupby(cols_grupo, as_index=False)["Valor"]
         .sum()
     )
 
-    agregado["Linha"] = "Despesas Administrativas"
-    agregado["Linha_Normalizada"] = normalizar_texto("Despesas Administrativas")
-    agregado["Ordem_Linha"] = nova_ordem
+    # Cria duas versões do agregado: uma para "Despesas Administrativas" (sintética nos
+    # cards) e outra para "Despesas Adm. Diretas + Indiretas" (que vem da planilha mas
+    # pode ter discrepâncias — recalculamos para garantir Diretas + Indiretas exato).
+    agregado1 = agregado_base.copy()
+    agregado1["Linha"] = "Despesas Administrativas"
+    agregado1["Linha_Normalizada"] = normalizar_texto("Despesas Administrativas")
+    agregado1["Ordem_Linha"] = nova_ordem
+
+    agregado2 = agregado_base.copy()
+    agregado2["Linha"] = "Despesas Adm. Diretas + Indiretas"
+    agregado2["Linha_Normalizada"] = normalizar_texto("Despesas Adm. Diretas + Indiretas")
+    # Para a ordem da linha original na planilha, busca se já existe e usa a min,
+    # senão usa nova_ordem
+    ordem_diretas_indiretas = df_pnl[
+        df_pnl["Linha_Normalizada"] == normalizar_texto("Despesas Adm. Diretas + Indiretas")
+    ]["Ordem_Linha"]
+    agregado2["Ordem_Linha"] = ordem_diretas_indiretas.min() if not ordem_diretas_indiretas.empty else nova_ordem
+
+    agregado = pd.concat([agregado1, agregado2], ignore_index=True)
 
     # Garante que tem todas as colunas do df original
     for col in df_pnl.columns:
@@ -1044,8 +1065,12 @@ def garantir_linha_despesas_administrativas(df_pnl):
 
     agregado = agregado[df_pnl.columns]
 
-    # Remove qualquer linha pré-existente com esse mesmo nome (evita duplicar)
-    df_sem = df_pnl[df_pnl["Linha_Normalizada"] != normalizar_texto("Despesas Administrativas")].copy()
+    # Remove qualquer linha pré-existente com esses nomes (evita duplicar)
+    nomes_substituir = {
+        normalizar_texto("Despesas Administrativas"),
+        normalizar_texto("Despesas Adm. Diretas + Indiretas"),
+    }
+    df_sem = df_pnl[~df_pnl["Linha_Normalizada"].isin(nomes_substituir)].copy()
 
     return pd.concat([df_sem, agregado], ignore_index=True)
 
@@ -1315,10 +1340,17 @@ def agregar_pnl_acumulado(df_pnl_periodo):
     base_somavel = base_valores[mask_soma]
     base_media = base_valores[mask_media]
 
-    # Linhas que somam: agrupa e soma
+    # IMPORTANTE: Não agrupar por Ordem_Linha! Em alguns casos (como "Despesas Adm.
+    # Diretas + Indiretas"), a Ordem_Linha varia entre meses na planilha original
+    # (ex: jan=50, fev=49). Se incluirmos Ordem_Linha no groupby, a mesma linha
+    # vai para grupos diferentes, e o resultado fica subtotalizado em vez de somado.
+    # Solução: agrupar apenas por (Produto, Linha, Linha_Normalizada, Métrica) e
+    # adicionar a Ordem_Linha (menor entre os meses) depois, para preservar a posição.
+
+    # Linhas que somam: agrupa e soma (sem Ordem_Linha no groupby)
     agrupado_soma = (
         base_somavel
-        .groupby(["Produto", "Linha", "Linha_Normalizada", "Métrica", "Ordem_Linha"], as_index=False)["Valor"]
+        .groupby(["Produto", "Linha", "Linha_Normalizada", "Métrica"], as_index=False)["Valor"]
         .sum()
     )
 
@@ -1326,14 +1358,21 @@ def agregar_pnl_acumulado(df_pnl_periodo):
     if not base_media.empty:
         agrupado_media = (
             base_media
-            .groupby(["Produto", "Linha", "Linha_Normalizada", "Métrica", "Ordem_Linha"], as_index=False)["Valor"]
+            .groupby(["Produto", "Linha", "Linha_Normalizada", "Métrica"], as_index=False)["Valor"]
             .mean()
         )
     else:
-        agrupado_media = base_media.iloc[0:0][["Produto", "Linha", "Linha_Normalizada", "Métrica", "Ordem_Linha", "Valor"]]
+        agrupado_media = base_media.iloc[0:0][["Produto", "Linha", "Linha_Normalizada", "Métrica", "Valor"]]
 
-    # Junta absolutos + médias (ainda sem os percentuais — eles serão recalculados)
+    # Junta absolutos + médias
     agrupado = pd.concat([agrupado_soma, agrupado_media], ignore_index=True)
+
+    # Adiciona Ordem_Linha pegando a menor por linha normalizada (preserva posição
+    # na tabela mesmo quando a planilha original tem ordens divergentes entre meses)
+    ordem_por_linha = (
+        base_valores.groupby("Linha_Normalizada", as_index=False)["Ordem_Linha"].min()
+    )
+    agrupado = agrupado.merge(ordem_por_linha, on="Linha_Normalizada", how="left")
 
     # Recalcula os indicadores percentuais usando as fórmulas anualizadas corretas
     agrupado = recalcular_indicadores_percentuais(agrupado, n_meses)
@@ -1466,15 +1505,19 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
         df_pnl_periodo = filtrar_pnl_acumulado(df_pnl_completo, data_sel_pnl)
         df_pnl = agregar_pnl_acumulado(df_pnl_periodo)
 
-        # Sobrescreve o RPL com os valores oficiais da aba 'P&L Acumulado' da planilha,
-        # mas apenas quando o período selecionado coincide com o período da aba oficial.
-        # Para outros períodos, mantém o cálculo automático (aproximação).
+        # Sobrescreve valores-chave (RPL, Despesas Adm Diretas/Indiretas) com os valores
+        # oficiais da aba 'P&L Acumulado' da planilha, mas só quando o período selecionado
+        # coincide com o período da aba oficial. Isso resolve pequenas discrepâncias entre
+        # a soma mensal e o acumulado oficial calculado pela equipe financeira.
         try:
-            rpl_oficial = carregar_rpl_acumulado_oficial(arquivo)
-            if rpl_oficial and rpl_oficial.get("data_ate") is not None:
-                periodo_oficial = nome_periodo(rpl_oficial["data_ate"])
+            dados_oficiais = carregar_rpl_acumulado_oficial(arquivo)
+            if dados_oficiais and dados_oficiais.get("data_ate") is not None:
+                periodo_oficial = nome_periodo(dados_oficiais["data_ate"])
                 if periodo_oficial == data_sel_pnl:
-                    df_pnl = aplicar_rpl_oficial_acumulado(df_pnl, rpl_oficial)
+                    df_pnl = aplicar_valores_oficiais_acumulado(df_pnl, dados_oficiais)
+                    # Recalcula a linha sintética 'Despesas Administrativas' com os
+                    # valores oficiais já aplicados (Diretas + Indiretas)
+                    df_pnl = garantir_linha_despesas_administrativas(df_pnl)
         except Exception:
             pass  # se falhar a leitura, mantém o cálculo automático
 
@@ -2204,19 +2247,17 @@ def carregar_comparativo_2025(arquivo):
 
 
 def carregar_rpl_acumulado_oficial(arquivo):
-    """Lê os valores oficiais do RPL Resultado Contábil da aba 'P&L Acumulado' da planilha.
+    """Lê valores oficiais do P&L Acumulado da planilha.
 
-    Essa aba contém o RPL pré-calculado pela equipe financeira para o período
-    acumulado disponível (ex: 1T26 = jan a mar/2026), com a fórmula correta
-    incluindo média ponderada de Alocação de Capital.
+    Essa aba contém valores pré-calculados pela equipe financeira para o período
+    acumulado disponível (ex: 1T26 = jan a mar/2026), com fórmulas corretas
+    (RPL com média ponderada de Alocação, Despesas Adm com ajustes etc.).
 
     Retorna um dict:
     {
         "data_ate": pd.Timestamp,  # último mês do período coberto
-        "rpl": {
-            ("Consignado", "Realizado"): valor,
-            ("Consignado", "Orçado"): valor,
-            ("Imobiliário", "Realizado"): valor,
+        "valores": {
+            (linha_normalizada, produto, metrica): valor,
             ...
         }
     }
@@ -2240,83 +2281,105 @@ def carregar_rpl_acumulado_oficial(arquivo):
     # Row 3 (idx 2): produtos: BANCO DIGITAL, CONSIGNADO, IMOBILIARIO, TOTAL
     # Row 4 (idx 3): métricas: Realizado, Orçado, Δ
     # Cols por produto: Banco=2,3,4 | Consignado=5,6,7 | Imobiliário=8,9,10 | Total=11,12,13
-
-    # Encontra a linha de RPL pelo label.
-    # Importante: a aba pode conter MAIS DE UMA linha "RPL - RES. CONTÁBIL" — a primeira
-    # ocorrência geralmente está vazia (cabeçalho/duplicada). Procuramos a primeira que
-    # tenha de fato valores numéricos preenchidos.
-    cols_para_validar = [5, 6, 8, 9, 11, 12]
-    linha_rpl_idx = None
-    for idx in bruto.index:
-        label = bruto.iat[idx, 1] if 1 < len(bruto.columns) else None
-        if normalizar_texto(label) != normalizar_texto("RPL - RES. CONTÁBIL"):
-            continue
-        # Verifica se essa linha tem ao menos um valor numérico nas colunas de produto
-        tem_valor = any(
-            pd.notna(bruto.iat[idx, c]) and isinstance(bruto.iat[idx, c], (int, float))
-            for c in cols_para_validar if c < len(bruto.columns)
-        )
-        if tem_valor:
-            linha_rpl_idx = idx
-            break
-
-    if linha_rpl_idx is None:
-        return None
-
     cols_produto = {
         "Consignado": (5, 6),
         "Imobiliário": (8, 9),
         "Total": (11, 12),
     }
+    cols_para_validar = [5, 6, 8, 9, 11, 12]
 
-    rpl = {}
-    for produto, (col_real, col_orc) in cols_produto.items():
-        try:
-            v_real = bruto.iat[linha_rpl_idx, col_real]
-            v_orc = bruto.iat[linha_rpl_idx, col_orc]
-            if pd.notna(v_real):
-                rpl[(produto, "Realizado")] = float(v_real)
-            if pd.notna(v_orc):
-                rpl[(produto, "Orçado")] = float(v_orc)
-        except Exception:
-            continue
+    # Linhas que vamos sobrescrever no dashboard com os valores oficiais.
+    # Aba P&L Acumulado é a fonte de verdade para essas linhas no acumulado.
+    linhas_para_capturar = [
+        "RPL - RES. CONTÁBIL",
+        "Despesas Administrativas Diretas",
+        "Desp. Administrativas Indiretas",
+    ]
 
-    return {"data_ate": data_ate, "rpl": rpl}
+    valores = {}
+
+    for nome_linha in linhas_para_capturar:
+        nome_norm = normalizar_texto(nome_linha)
+        # Algumas linhas aparecem mais de uma vez na aba (cabeçalho duplicado).
+        # Procuramos a primeira linha com valores numéricos preenchidos.
+        for idx in bruto.index:
+            label = bruto.iat[idx, 1] if 1 < len(bruto.columns) else None
+            if normalizar_texto(label) != nome_norm:
+                continue
+            tem_valor = any(
+                pd.notna(bruto.iat[idx, c]) and isinstance(bruto.iat[idx, c], (int, float))
+                for c in cols_para_validar if c < len(bruto.columns)
+            )
+            if not tem_valor:
+                continue
+
+            for produto, (col_real, col_orc) in cols_produto.items():
+                try:
+                    v_real = bruto.iat[idx, col_real]
+                    v_orc = bruto.iat[idx, col_orc]
+                    if pd.notna(v_real) and isinstance(v_real, (int, float)):
+                        valores[(nome_norm, produto, "Realizado")] = float(v_real)
+                    if pd.notna(v_orc) and isinstance(v_orc, (int, float)):
+                        valores[(nome_norm, produto, "Orçado")] = float(v_orc)
+                except Exception:
+                    continue
+            break
+
+    if not valores:
+        return None
+
+    return {"data_ate": data_ate, "valores": valores}
 
 
-def aplicar_rpl_oficial_acumulado(df_acumulado, rpl_oficial):
-    """Sobrescreve os valores calculados de RPL no df_acumulado pelos valores
-    oficiais lidos da aba 'P&L Acumulado'."""
-    if df_acumulado.empty or not rpl_oficial or not rpl_oficial.get("rpl"):
+def aplicar_valores_oficiais_acumulado(df_acumulado, dados_oficiais):
+    """Sobrescreve valores no df_acumulado pelos valores oficiais lidos da aba
+    'P&L Acumulado' da planilha. Aplica para linhas como RPL, Despesas Adm Diretas
+    e Indiretas (que têm pequenas diferenças entre soma mensal e acumulado oficial)."""
+    if df_acumulado.empty or not dados_oficiais or not dados_oficiais.get("valores"):
         return df_acumulado
 
-    rpl_norm = normalizar_texto("RPL - RES. CONTÁBIL")
+    valores = dados_oficiais["valores"]
 
-    # Pega ordem da linha existente para preservar a posição na tabela
-    base_existente = df_acumulado[df_acumulado["Linha_Normalizada"] == rpl_norm]
-    ordem = base_existente["Ordem_Linha"].iloc[0] if not base_existente.empty else 9999
+    # Mapeia label "bonito" da linha pelo seu nome normalizado
+    rotulos_por_norm = {
+        normalizar_texto("RPL - RES. CONTÁBIL"): "RPL - RES. CONTÁBIL",
+        normalizar_texto("Despesas Administrativas Diretas"): "Despesas Administrativas Diretas",
+        normalizar_texto("Desp. Administrativas Indiretas"): "Desp. Administrativas Indiretas",
+    }
 
-    # Remove valores antigos de RPL (Realizado e Orçado)
-    df_sem_rpl = df_acumulado[
-        ~((df_acumulado["Linha_Normalizada"] == rpl_norm)
-          & (df_acumulado["Métrica"].isin(["Realizado", "Orçado"])))
+    # Linhas afetadas
+    linhas_norm_afetadas = set(k[0] for k in valores.keys())
+
+    # Pega ordem original de cada linha (para preservar posição na tabela)
+    ordens_existentes = {}
+    for ln in linhas_norm_afetadas:
+        base = df_acumulado[df_acumulado["Linha_Normalizada"] == ln]
+        if not base.empty:
+            ordens_existentes[ln] = base["Ordem_Linha"].iloc[0]
+        else:
+            ordens_existentes[ln] = 9999
+
+    # Remove valores antigos (Realizado e Orçado) das linhas afetadas
+    df_filtrado = df_acumulado[
+        ~(df_acumulado["Linha_Normalizada"].isin(linhas_norm_afetadas)
+          & df_acumulado["Métrica"].isin(["Realizado", "Orçado"]))
     ].copy()
 
     novos_registros = []
-    for (produto, metrica), valor in rpl_oficial["rpl"].items():
+    for (linha_norm, produto, metrica), valor in valores.items():
         novos_registros.append({
             "Produto": produto,
-            "Linha": "RPL - RES. CONTÁBIL",
-            "Linha_Normalizada": rpl_norm,
+            "Linha": rotulos_por_norm.get(linha_norm, linha_norm),
+            "Linha_Normalizada": linha_norm,
             "Métrica": metrica,
-            "Ordem_Linha": ordem,
+            "Ordem_Linha": ordens_existentes.get(linha_norm, 9999),
             "Valor": valor,
         })
 
     if not novos_registros:
         return df_acumulado
 
-    return pd.concat([df_sem_rpl, pd.DataFrame(novos_registros)], ignore_index=True)
+    return pd.concat([df_filtrado, pd.DataFrame(novos_registros)], ignore_index=True)
 
 
 def carregar_2025_acumulado(arquivo):
