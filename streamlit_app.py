@@ -874,14 +874,19 @@ def carregar_pnl_mensal(arquivo):
         keep="first",
     ).reset_index(drop=True)
 
-    # Alíquota de IR/CSLL: apresentar sempre em módulo (valor positivo).
-    # A planilha original guarda como negativa (impostos sobre lucro), mas para
-    # exibição como "alíquota" o valor deve ser absoluto.
-    mask_aliquota = (
-        (df["Linha_Normalizada"] == normalizar_texto("Alíquota de IR/CSLL"))
-        & (df["Métrica"].isin(["Realizado", "Orçado"]))
+    # Linhas que devem aparecer sempre em módulo (valor positivo) na exibição:
+    # - Alíquota de IR/CSLL: |Impostos / RAI|
+    # - Rácio de Eficiência: |Despesas Adm / Margem Intermediação|
+    # A planilha original guarda como negativas, mas o conceito é uma "taxa" positiva.
+    linhas_em_modulo = [
+        normalizar_texto("Alíquota de IR/CSLL"),
+        normalizar_texto("Rácio de Eficiência"),
+    ]
+    mask_modulo = (
+        df["Linha_Normalizada"].isin(linhas_em_modulo)
+        & df["Métrica"].isin(["Realizado", "Orçado"])
     )
-    df.loc[mask_aliquota, "Valor"] = df.loc[mask_aliquota, "Valor"].abs()
+    df.loc[mask_modulo, "Valor"] = df.loc[mask_modulo, "Valor"].abs()
 
     return df
 
@@ -1202,10 +1207,10 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
             return mg_liq * fator_anual / cart
 
         def calc_racio_eficiencia(d_dir, d_ind, mg):
+            # Rácio Eficiência = |(Desp Adm Diretas + Desp Adm Indiretas) / MARGEM INTERMEDIAÇÃO|, em módulo
             if d_dir is None or d_ind is None or mg is None or mg == 0:
                 return None
-            # Despesas vêm com sinal negativo na planilha → resultado já fica negativo
-            return (d_dir + d_ind) / mg
+            return abs((d_dir + d_ind) / mg)
 
         def calc_rpl(res, pl):
             if res is None or pl is None or pl == 0:
@@ -1706,8 +1711,19 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
             # Quando ambos são negativos (linha de custo/despesa), o mais negativo (maior em módulo) é pior.
             # Quando ambos são positivos, o menor realizado é pior.
             # Quando há troca de sinal, compara diretamente.
+            # EXCEÇÃO: Rácio de Eficiência e Alíquota de IR/CSLL são exibidos em módulo —
+            # nesses casos, realizado MAIOR = PIOR (mais despesa relativa, mais imposto).
+            linha_norm_card = normalizar_texto(linha)
+            inverter_logica = linha_norm_card in [
+                normalizar_texto("Rácio de Eficiência"),
+                normalizar_texto("Alíquota de IR/CSLL"),
+            ]
+
             if pd.isna(realizado) or pd.isna(orcado):
                 delta_bad = False
+            elif inverter_logica:
+                # Indicadores em módulo onde maior = pior
+                delta_bad = realizado > orcado
             elif realizado < 0 and orcado < 0:
                 # Ambos negativos: mais negativo (maior abs) = pior
                 delta_bad = abs(realizado) > abs(orcado)
