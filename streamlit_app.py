@@ -1747,6 +1747,9 @@ def tabela_html_pnl_matriz(df_matrix, produtos, metricas_por_produto):
         html.append(f"<td>{linha}</td>")
 
         linha_percentual = linha_pnl_percentual(linha)
+        # Linhas onde a variação (Δ %, Δ R$) não faz sentido — são apresentadas
+        # apenas como Realizado vs Orçado, sem coluna de variação.
+        ocultar_variacao = linha_norm == normalizar_texto("Alíquota de IR/CSLL")
 
         for produto in produtos:
             for metrica in metricas_por_produto[produto]:
@@ -1754,13 +1757,19 @@ def tabela_html_pnl_matriz(df_matrix, produtos, metricas_por_produto):
                 classes = []
 
                 if metrica == "Δ %":
-                    texto = formatar_pontos_percentuais(valor) if linha_percentual else formatar_percentual(valor)
-                    if pd.notna(valor):
-                        classes.append("delta-negative" if row[(produto, "_delta_bad")] else "delta-positive")
+                    if ocultar_variacao:
+                        texto = ""
+                    else:
+                        texto = formatar_pontos_percentuais(valor) if linha_percentual else formatar_percentual(valor)
+                        if pd.notna(valor):
+                            classes.append("delta-negative" if row[(produto, "_delta_bad")] else "delta-positive")
                 elif metrica == "Δ R$":
-                    texto = "" if linha_percentual else formatar_numero(valor)
-                    if (not linha_percentual) and pd.notna(valor):
-                        classes.append("delta-negative" if row[(produto, "_delta_bad")] else "delta-positive")
+                    if ocultar_variacao:
+                        texto = ""
+                    else:
+                        texto = "" if linha_percentual else formatar_numero(valor)
+                        if (not linha_percentual) and pd.notna(valor):
+                            classes.append("delta-negative" if row[(produto, "_delta_bad")] else "delta-positive")
                 elif linha_percentual and metrica in ["Realizado", "Orçado"]:
                     texto = formatar_percentual_valor(valor)
                     if pd.notna(valor) and valor < 0:
