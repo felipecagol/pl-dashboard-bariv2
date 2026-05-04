@@ -1878,10 +1878,11 @@ def tabela_html_pnl_matriz(df_matrix, produtos, metricas_por_produto):
                     if ocultar_variacao:
                         texto = ""
                     elif eh_racio_eficiencia:
-                        # Rácio: mostra com sinal +/-, mas sempre em verde
+                        # Rácio: mostra com sinal +/-. Verde se positivo (Realizado < Orçado),
+                        # vermelho se negativo (Realizado > Orçado = pior).
                         texto = formatar_pontos_percentuais(valor)
                         if pd.notna(valor):
-                            classes.append("delta-positive")
+                            classes.append("delta-positive" if valor >= 0 else "delta-negative")
                     else:
                         texto = formatar_pontos_percentuais(valor) if linha_percentual else formatar_percentual(valor)
                         if pd.notna(valor):
