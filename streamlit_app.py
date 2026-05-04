@@ -885,6 +885,28 @@ def carregar_pnl_mensal(arquivo):
 
     return df
 
+def linhas_ocultas_pnl():
+    """Linhas que NÃO devem aparecer na tabela P&L (matriz) nem nos cards/gráficos.
+
+    Os dados continuam carregados internamente (são usados em cálculos como
+    Margem Bruta, Margem Líquida, RPL), mas ficam ocultos na exibição.
+    """
+    return {
+        normalizar_texto("Componente Juros"),
+        normalizar_texto("Componente Inflação"),
+        normalizar_texto("RESULTADO ANTES IMPOSTO RECORRENTE"),
+        normalizar_texto("Rácio de Eficiência Recorrente"),
+        normalizar_texto("Alocação de Capital"),
+        normalizar_texto("PL Médio (Banco + Hipo)"),
+        normalizar_texto("PL Médio (Prudencial + BRCards)"),
+        normalizar_texto("Carteira de Crédito Bruta Média"),
+        normalizar_texto("Carteira de Crédito SD Cliente Média"),
+        normalizar_texto("Taxa Média Carteira Bruta Média"),
+        normalizar_texto("Taxa Média Carteira SD Cliente Média"),
+        normalizar_texto("Rateio Carteira"),
+    }
+
+
 def obter_linhas_tabela_pnl(df_pnl):
     if df_pnl.empty:
         return []
@@ -899,6 +921,10 @@ def obter_linhas_tabela_pnl(df_pnl):
         .sort_values("Ordem_Linha")
         .drop_duplicates(subset=["Linha_Normalizada"], keep="first")
     )
+
+    # Remove linhas ocultas da exibição (mantidas só para cálculos internos)
+    ocultas = linhas_ocultas_pnl()
+    linhas = linhas[~linhas["Linha_Normalizada"].isin(ocultas)]
 
     return linhas["Linha"].tolist()
 
