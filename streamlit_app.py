@@ -1465,6 +1465,19 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
     if pagina == "Acumulado":
         df_pnl_periodo = filtrar_pnl_acumulado(df_pnl_completo, data_sel_pnl)
         df_pnl = agregar_pnl_acumulado(df_pnl_periodo)
+
+        # Sobrescreve o RPL com os valores oficiais da aba 'P&L Acumulado' da planilha,
+        # mas apenas quando o período selecionado coincide com o período da aba oficial.
+        # Para outros períodos, mantém o cálculo automático (aproximação).
+        try:
+            rpl_oficial = carregar_rpl_acumulado_oficial(arquivo)
+            if rpl_oficial and rpl_oficial.get("data_ate") is not None:
+                periodo_oficial = nome_periodo(rpl_oficial["data_ate"])
+                if periodo_oficial == data_sel_pnl:
+                    df_pnl = aplicar_rpl_oficial_acumulado(df_pnl, rpl_oficial)
+        except Exception:
+            pass  # se falhar a leitura, mantém o cálculo automático
+
         titulo_cards = "Principais linhas do P&L Acumulado"
         titulo_comparativo = "Realizado x Orçado acumulado por linha principal"
         titulo_resultado_produto = "Resultado Contábil acumulado por produto"
@@ -2188,6 +2201,122 @@ def carregar_comparativo_2025(arquivo):
     # Remove duplicidade visual, mantendo a primeira ocorrência de cada linha por ano.
     df = df.sort_values(["Ano", "Ordem"]).drop_duplicates(["Ano", "Linha_Normalizada"], keep="first")
     return df
+
+
+def carregar_rpl_acumulado_oficial(arquivo):
+    """Lê os valores oficiais do RPL Resultado Contábil da aba 'P&L Acumulado' da planilha.
+
+    Essa aba contém o RPL pré-calculado pela equipe financeira para o período
+    acumulado disponível (ex: 1T26 = jan a mar/2026), com a fórmula correta
+    incluindo média ponderada de Alocação de Capital.
+
+    Retorna um dict:
+    {
+        "data_ate": pd.Timestamp,  # último mês do período coberto
+        "rpl": {
+            ("Consignado", "Realizado"): valor,
+            ("Consignado", "Orçado"): valor,
+            ("Imobiliário", "Realizado"): valor,
+            ...
+        }
+    }
+    Retorna None se a aba não existir ou estiver mal formatada.
+    """
+    try:
+        bruto = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
+    except Exception:
+        return None
+
+    if bruto.empty:
+        return None
+
+    # Período coberto pela aba está na linha 1 (col 8 = "Até:")
+    try:
+        data_ate = pd.Timestamp(bruto.iat[0, 8])
+    except Exception:
+        data_ate = None
+
+    # Estrutura da aba:
+    # Row 3 (idx 2): produtos: BANCO DIGITAL, CONSIGNADO, IMOBILIARIO, TOTAL
+    # Row 4 (idx 3): métricas: Realizado, Orçado, Δ
+    # Cols por produto: Banco=2,3,4 | Consignado=5,6,7 | Imobiliário=8,9,10 | Total=11,12,13
+
+    # Encontra a linha de RPL pelo label.
+    # Importante: a aba pode conter MAIS DE UMA linha "RPL - RES. CONTÁBIL" — a primeira
+    # ocorrência geralmente está vazia (cabeçalho/duplicada). Procuramos a primeira que
+    # tenha de fato valores numéricos preenchidos.
+    cols_para_validar = [5, 6, 8, 9, 11, 12]
+    linha_rpl_idx = None
+    for idx in bruto.index:
+        label = bruto.iat[idx, 1] if 1 < len(bruto.columns) else None
+        if normalizar_texto(label) != normalizar_texto("RPL - RES. CONTÁBIL"):
+            continue
+        # Verifica se essa linha tem ao menos um valor numérico nas colunas de produto
+        tem_valor = any(
+            pd.notna(bruto.iat[idx, c]) and isinstance(bruto.iat[idx, c], (int, float))
+            for c in cols_para_validar if c < len(bruto.columns)
+        )
+        if tem_valor:
+            linha_rpl_idx = idx
+            break
+
+    if linha_rpl_idx is None:
+        return None
+
+    cols_produto = {
+        "Consignado": (5, 6),
+        "Imobiliário": (8, 9),
+        "Total": (11, 12),
+    }
+
+    rpl = {}
+    for produto, (col_real, col_orc) in cols_produto.items():
+        try:
+            v_real = bruto.iat[linha_rpl_idx, col_real]
+            v_orc = bruto.iat[linha_rpl_idx, col_orc]
+            if pd.notna(v_real):
+                rpl[(produto, "Realizado")] = float(v_real)
+            if pd.notna(v_orc):
+                rpl[(produto, "Orçado")] = float(v_orc)
+        except Exception:
+            continue
+
+    return {"data_ate": data_ate, "rpl": rpl}
+
+
+def aplicar_rpl_oficial_acumulado(df_acumulado, rpl_oficial):
+    """Sobrescreve os valores calculados de RPL no df_acumulado pelos valores
+    oficiais lidos da aba 'P&L Acumulado'."""
+    if df_acumulado.empty or not rpl_oficial or not rpl_oficial.get("rpl"):
+        return df_acumulado
+
+    rpl_norm = normalizar_texto("RPL - RES. CONTÁBIL")
+
+    # Pega ordem da linha existente para preservar a posição na tabela
+    base_existente = df_acumulado[df_acumulado["Linha_Normalizada"] == rpl_norm]
+    ordem = base_existente["Ordem_Linha"].iloc[0] if not base_existente.empty else 9999
+
+    # Remove valores antigos de RPL (Realizado e Orçado)
+    df_sem_rpl = df_acumulado[
+        ~((df_acumulado["Linha_Normalizada"] == rpl_norm)
+          & (df_acumulado["Métrica"].isin(["Realizado", "Orçado"])))
+    ].copy()
+
+    novos_registros = []
+    for (produto, metrica), valor in rpl_oficial["rpl"].items():
+        novos_registros.append({
+            "Produto": produto,
+            "Linha": "RPL - RES. CONTÁBIL",
+            "Linha_Normalizada": rpl_norm,
+            "Métrica": metrica,
+            "Ordem_Linha": ordem,
+            "Valor": valor,
+        })
+
+    if not novos_registros:
+        return df_acumulado
+
+    return pd.concat([df_sem_rpl, pd.DataFrame(novos_registros)], ignore_index=True)
 
 
 def carregar_2025_acumulado(arquivo):
