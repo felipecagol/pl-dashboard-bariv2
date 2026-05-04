@@ -874,23 +874,16 @@ def carregar_pnl_mensal(arquivo):
         keep="first",
     ).reset_index(drop=True)
 
+    # Alíquota de IR/CSLL: apresentar sempre em módulo (valor positivo).
+    # A planilha original guarda como negativa (impostos sobre lucro), mas para
+    # exibição como "alíquota" o valor deve ser absoluto.
+    mask_aliquota = (
+        (df["Linha_Normalizada"] == normalizar_texto("Alíquota de IR/CSLL"))
+        & (df["Métrica"].isin(["Realizado", "Orçado"]))
+    )
+    df.loc[mask_aliquota, "Valor"] = df.loc[mask_aliquota, "Valor"].abs()
+
     return df
-
-def linhas_ocultas_pnl():
-    """Linhas que NÃO devem aparecer na tabela P&L (matriz) nem nos cards/gráficos.
-
-    Os dados continuam sendo carregados normalmente (para cálculos internos
-    como o RPL que precisa do PL Médio), mas são filtrados na exibição.
-    """
-    return {
-        normalizar_texto("Componente Juros"),
-        normalizar_texto("Componente Inflação"),
-        normalizar_texto("RESULTADO ANTES IMPOSTO RECORRENTE"),
-        normalizar_texto("Alocação de Capital"),
-        normalizar_texto("PL Médio (Banco + Hipo)"),
-        normalizar_texto("PL Médio (Prudencial + BRCards)"),
-    }
-
 
 def obter_linhas_tabela_pnl(df_pnl):
     if df_pnl.empty:
@@ -906,10 +899,6 @@ def obter_linhas_tabela_pnl(df_pnl):
         .sort_values("Ordem_Linha")
         .drop_duplicates(subset=["Linha_Normalizada"], keep="first")
     )
-
-    # Remove linhas que devem ficar ocultas na exibição
-    ocultas = linhas_ocultas_pnl()
-    linhas = linhas[~linhas["Linha_Normalizada"].isin(ocultas)]
 
     return linhas["Linha"].tolist()
 
@@ -1198,9 +1187,10 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
             return res * fator_anual / pl
 
         def calc_aliquota(imp, rai_v):
+            # Alíquota IR/CSLL = |Impostos / Resultado Antes Imposto|, em módulo
             if imp is None or rai_v is None or rai_v == 0:
                 return None
-            return imp / rai_v
+            return abs(imp / rai_v)
 
         indicadores = [
             ("Margem Bruta", normalizar_texto("Margem Bruta"),
@@ -1480,30 +1470,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
     base_grafico["Ordem"] = base_grafico["Linha"].map(ordem_linhas)
     base_grafico = base_grafico.sort_values("Ordem", ascending=False)
 
-    # Identifica barras "pequenas" (menos de 15% do maior valor em módulo) — para essas,
-    # adicionamos espaços antes do rótulo (lado negativo) ou depois (lado positivo) para
-    # afastar o texto da barra e evitar sobreposição com a barra agrupada vizinha.
-    if not base_grafico.empty:
-        valor_max_abs = base_grafico["Valor"].abs().max()
-    else:
-        valor_max_abs = 1
-
-    def montar_rotulo(valor):
-        texto = formatar_moeda_curta(valor)
-        if valor_max_abs == 0 or pd.isna(valor):
-            return texto
-        proporcao = abs(valor) / valor_max_abs
-        if proporcao < 0.15:
-            # Barras pequenas: empurra o texto para longe da barra
-            espacos = "    "  # 4 espaços
-            if valor < 0:
-                # Texto à esquerda da barra → adiciona espaços à direita do rótulo
-                return f"{texto}{espacos}"
-            else:
-                return f"{espacos}{texto}"
-        return texto
-
-    base_grafico["Rótulo"] = base_grafico["Valor"].map(montar_rotulo)
+    base_grafico["Rótulo"] = base_grafico["Valor"].map(formatar_moeda_curta)
 
     fig_comp = px.bar(
         base_grafico,
@@ -1515,6 +1482,14 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
         barmode="group",
         labels={"Valor": "Valor", "Linha": "", "Métrica": ""},
     )
+
+    # Para evitar que rótulos de barras pequenas (ex: Provisões) se sobreponham
+    # à barra seguinte, deslocamos o texto para longe do zero quando a barra é pequena
+    # em relação à maior barra do gráfico.
+    if not base_grafico.empty:
+        valor_max_abs = base_grafico["Valor"].abs().max()
+    else:
+        valor_max_abs = 1
 
     fig_comp.update_traces(
         texttemplate="<b>%{text}</b>",
@@ -1539,7 +1514,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
     if not base_grafico.empty:
         x_min = base_grafico["Valor"].min()
         x_max = base_grafico["Valor"].max()
-        x_pad = max((x_max - x_min) * 0.34, 1)
+        x_pad = max((x_max - x_min) * 0.32, 1)
         fig_comp.update_xaxes(
             showgrid=False,
             zeroline=False,
