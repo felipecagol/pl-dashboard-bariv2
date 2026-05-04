@@ -2289,11 +2289,17 @@ def carregar_rpl_acumulado_oficial(arquivo):
     cols_para_validar = [5, 6, 8, 9, 11, 12]
 
     # Linhas que vamos sobrescrever no dashboard com os valores oficiais.
-    # Aba P&L Acumulado é a fonte de verdade para essas linhas no acumulado.
+    # Aba P&L Acumulado é a fonte de verdade para essas linhas no acumulado:
+    # - RPL: cálculo com média ponderada de Alocação de Capital
+    # - Despesas Adm Diretas/Indiretas: pequenas diferenças vs soma mensal pura
+    # - RESULTADO ANTES IMPOSTO e CONTÁBIL: derivam das diferenças acima e precisam
+    #   ser sobrescritos para manter consistência interna entre as linhas exibidas
     linhas_para_capturar = [
         "RPL - RES. CONTÁBIL",
         "Despesas Administrativas Diretas",
         "Desp. Administrativas Indiretas",
+        "RESULTADO ANTES IMPOSTO",
+        "RESULTADO CONTÁBIL",
     ]
 
     valores = {}
@@ -2345,6 +2351,8 @@ def aplicar_valores_oficiais_acumulado(df_acumulado, dados_oficiais):
         normalizar_texto("RPL - RES. CONTÁBIL"): "RPL - RES. CONTÁBIL",
         normalizar_texto("Despesas Administrativas Diretas"): "Despesas Administrativas Diretas",
         normalizar_texto("Desp. Administrativas Indiretas"): "Desp. Administrativas Indiretas",
+        normalizar_texto("RESULTADO ANTES IMPOSTO"): "RESULTADO ANTES IMPOSTO",
+        normalizar_texto("RESULTADO CONTÁBIL"): "RESULTADO CONTÁBIL",
     }
 
     # Linhas afetadas
