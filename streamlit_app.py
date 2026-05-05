@@ -1549,8 +1549,16 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
             else:
                 variacao = variacao_pnl_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
 
+            # Para linhas de custo/despesa (valor realizado negativo), a variação
+            # matemática é negativa quando a despesa cresceu (ex: -14,6 → -22,67).
+            # O presidente quer ler o sinal como "a despesa aumentou X%" → sinal +.
+            # A cor (vermelho) é mantida pelo valor original de variacao.
+            variacao_display = None
+            if variacao is not None and not pd.isna(variacao) and realizado < 0:
+                variacao_display = -variacao
+
             with col_card:
-                card_pnl(linha, realizado, variacao=variacao)
+                card_pnl(linha, realizado, variacao=variacao, variacao_display=variacao_display)
 
     st.markdown(f'<div class="section-title">{titulo_comparativo}</div>', unsafe_allow_html=True)
 
@@ -1667,11 +1675,17 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
     )
 
 
-def card_pnl(titulo, valor, variacao=None, variacao_label="Δ mês anterior"):
+def card_pnl(titulo, valor, variacao=None, variacao_label="Δ mês anterior", variacao_display=None):
+    """
+    variacao         : float — controla a COR (classe_variacao usa o sinal real)
+    variacao_display : float — controla o NÚMERO exibido; se None usa variacao.
+                       Permite mostrar "+54,7%" vermelho para despesas que cresceram.
+    """
     if variacao is None or pd.isna(variacao):
         delta_html = '<div class="kpi-delta delta-neutral">N/D</div>'
     else:
-        delta_html = f'<div class="kpi-delta {classe_variacao(variacao)}">{formatar_variacao(variacao, variacao_label)}</div>'
+        exibir = variacao_display if variacao_display is not None else variacao
+        delta_html = f'<div class="kpi-delta {classe_variacao(variacao)}">{formatar_variacao(exibir, variacao_label)}</div>'
 
     st.markdown(
         f"""
