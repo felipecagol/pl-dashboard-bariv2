@@ -1477,7 +1477,7 @@ def variacao_pnl_acumulado_mes_anterior(df_pnl_completo, produto, linha, periodo
 def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual):
     """Calcula a variação % entre o YTD atual e o mesmo período de 2025.
 
-    df_comp_2025 : DataFrame de carregar_comparativo_2025 (tem Ano, Produto, Linha_Normalizada, Realizado)
+    df_comp_2025 : DataFrame de carregar_comparativo_2025 (tem Ano, Linha_Normalizada, Realizado)
     produto      : 'Total', 'Consignado' ou 'Imobiliário'
     linha        : nome da linha (string original)
     valor_ytd_atual : float — valor já calculado do YTD atual (sum jan-mar/2026)
@@ -1492,35 +1492,51 @@ def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual
 
     linha_norm = normalizar_texto(linha)
 
-    # df_comp tem colunas: Ano, Produto (às vezes não), Linha_Normalizada, Realizado
-    # Verifica se há coluna Produto
-    if "Produto" in df_comp_2025.columns:
-        base = df_comp_2025[
-            (df_comp_2025["Ano"] == 2025)
-            & (df_comp_2025["Produto"] == produto)
-            & (df_comp_2025["Linha_Normalizada"] == linha_norm)
-        ]
-        # Se não encontrou para o produto específico, tenta sem filtro de produto (Total)
-        if base.empty and produto == "Total":
+    # "Despesas Administrativas" é linha sintética (Diretas + Indiretas) — não existe
+    # diretamente no df_comp. Precisa somar as duas componentes de 2025.
+    NORM_DESP_ADM = normalizar_texto("Despesas Administrativas")
+    NORM_DESP_DIR = normalizar_texto("Despesas Administrativas Diretas")
+    NORM_DESP_IND = normalizar_texto("Desp. Administrativas Indiretas")
+
+    def buscar_valor_2025(norm_alvo):
+        """Busca valor Realizado de 2025 para uma linha normalizada."""
+        if "Produto" in df_comp_2025.columns:
             base = df_comp_2025[
                 (df_comp_2025["Ano"] == 2025)
-                & (df_comp_2025["Linha_Normalizada"] == linha_norm)
+                & (df_comp_2025["Produto"] == produto)
+                & (df_comp_2025["Linha_Normalizada"] == norm_alvo)
             ]
+            if base.empty:
+                # fallback sem filtro de produto
+                base = df_comp_2025[
+                    (df_comp_2025["Ano"] == 2025)
+                    & (df_comp_2025["Linha_Normalizada"] == norm_alvo)
+                ]
+        else:
+            base = df_comp_2025[
+                (df_comp_2025["Ano"] == 2025)
+                & (df_comp_2025["Linha_Normalizada"] == norm_alvo)
+            ]
+
+        if base.empty:
+            return None
+        v = pd.to_numeric(base["Realizado"].iloc[0], errors="coerce")
+        return float(v) if pd.notna(v) else None
+
+    if linha_norm == NORM_DESP_ADM:
+        # Soma Diretas + Indiretas de 2025
+        v_dir = buscar_valor_2025(NORM_DESP_DIR)
+        v_ind = buscar_valor_2025(NORM_DESP_IND)
+        if v_dir is None and v_ind is None:
+            return None
+        valor_2025 = (v_dir or 0.0) + (v_ind or 0.0)
     else:
-        base = df_comp_2025[
-            (df_comp_2025["Ano"] == 2025)
-            & (df_comp_2025["Linha_Normalizada"] == linha_norm)
-        ]
+        valor_2025 = buscar_valor_2025(linha_norm)
 
-    if base.empty:
+    if valor_2025 is None or valor_2025 == 0:
         return None
 
-    valor_2025 = pd.to_numeric(base["Realizado"].iloc[0], errors="coerce")
-
-    if pd.isna(valor_2025) or valor_2025 == 0:
-        return None
-
-    return (float(valor_ytd_atual) - float(valor_2025)) / abs(float(valor_2025))
+    return (float(valor_ytd_atual) - valor_2025) / abs(valor_2025)
 
 
 def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None):
