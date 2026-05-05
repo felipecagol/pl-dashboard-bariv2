@@ -1549,8 +1549,18 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
             else:
                 variacao = variacao_pnl_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
 
+            cor_classe = None
+            variacao_exibir = None
+
+            if variacao is not None and not pd.isna(variacao) and realizado < 0 and float(variacao) < 0:
+                # Despesa/custo que piorou (cresceu em módulo):
+                # variacao matemática é negativa (ex: -0.547), mas o presidente quer ler "+54,7%" vermelho.
+                # Invertemos apenas o sinal exibido; cor permanece vermelho (delta-negative).
+                variacao_exibir = -variacao
+                cor_classe = "delta-negative"
+
             with col_card:
-                card_pnl(linha, realizado, variacao=variacao)
+                card_pnl(linha, realizado, variacao=variacao, cor_classe=cor_classe, variacao_exibir=variacao_exibir)
 
     st.markdown(f'<div class="section-title">{titulo_comparativo}</div>', unsafe_allow_html=True)
 
@@ -1667,11 +1677,17 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
     )
 
 
-def card_pnl(titulo, valor, variacao=None, variacao_label="Δ mês anterior"):
+def card_pnl(titulo, valor, variacao=None, variacao_label="Δ mês anterior", cor_classe=None, variacao_exibir=None):
+    """
+    cor_classe    : string CSS opcional ('delta-positive'/'delta-negative') — substitui a cor automática
+    variacao_exibir: float opcional — valor usado no texto exibido; se None usa variacao
+    """
     if variacao is None or pd.isna(variacao):
         delta_html = '<div class="kpi-delta delta-neutral">N/D</div>'
     else:
-        delta_html = f'<div class="kpi-delta {classe_variacao(variacao)}">{formatar_variacao(variacao, variacao_label)}</div>'
+        cls = cor_classe if cor_classe is not None else classe_variacao(variacao)
+        val_txt = variacao_exibir if variacao_exibir is not None else variacao
+        delta_html = f'<div class="kpi-delta {cls}">{formatar_variacao(val_txt, variacao_label)}</div>'
 
     st.markdown(
         f"""
@@ -1809,16 +1825,6 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
                 delta_bad = realizado < orcado
 
             row[(produto, "_delta_bad")] = delta_bad
-            # Flag para inversão do sinal exibido: quando ambos realizado e orçado são
-            # negativos (linhas de custo/despesa), o delta_pct matemático é negativo
-            # quando a despesa cresceu — mas o presidente quer ler "+4%" (despesa subiu).
-            # Armazenamos o flag aqui e invertemos o sinal apenas na renderização.
-            row[(produto, "_ambos_neg")] = (
-                not racio_eficiencia
-                and not linha_percentual
-                and pd.notna(realizado) and pd.notna(orcado)
-                and realizado < 0 and orcado < 0
-            )
 
             if produto == "Total":
                 # Δ R$ não se aplica a indicadores percentuais.
@@ -1894,19 +1900,14 @@ def tabela_html_pnl_matriz(df_matrix, produtos, metricas_por_produto):
                         if pd.notna(valor):
                             classes.append("delta-positive" if valor >= 0 else "delta-negative")
                     else:
-                        # Para linhas onde ambos são negativos (despesas/custos), o delta_pct
-                        # matemático é negativo quando a despesa cresceu. Invertemos o sinal
-                        # exibido para que "+4%" signifique "despesa subiu 4%", mantendo a cor.
-                        valor_exibir = -valor if (pd.notna(valor) and row[(produto, "_ambos_neg")]) else valor
-                        texto = formatar_pontos_percentuais(valor_exibir) if linha_percentual else formatar_percentual(valor_exibir)
+                        texto = formatar_pontos_percentuais(valor) if linha_percentual else formatar_percentual(valor)
                         if pd.notna(valor):
                             classes.append("delta-negative" if row[(produto, "_delta_bad")] else "delta-positive")
                 elif metrica == "Δ R$":
                     if ocultar_variacao:
                         texto = ""
                     else:
-                        valor_exibir = -valor if (pd.notna(valor) and row[(produto, "_ambos_neg")]) else valor
-                        texto = "" if linha_percentual else formatar_numero(valor_exibir)
+                        texto = "" if linha_percentual else formatar_numero(valor)
                         if (not linha_percentual) and pd.notna(valor):
                             classes.append("delta-negative" if row[(produto, "_delta_bad")] else "delta-positive")
                 elif linha_percentual and metrica in ["Realizado", "Orçado"]:
