@@ -1475,31 +1475,16 @@ def variacao_pnl_acumulado_mes_anterior(df_pnl_completo, produto, linha, periodo
 
 
 def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual):
-    """Calcula a variação % entre o YTD atual e o mesmo período de 2025.
-
-    df_comp_2025 : DataFrame de carregar_comparativo_2025 (tem Ano, Linha_Normalizada, Realizado)
-    produto      : 'Total', 'Consignado' ou 'Imobiliário'
-    linha        : nome da linha (string original)
-    valor_ytd_atual : float — valor já calculado do YTD atual (sum jan-mar/2026)
-
-    Retorna None se não houver dado de 2025 ou base for zero.
-    """
-    if df_comp_2025 is None or df_comp_2025.empty:
-        return None
-
-    if pd.isna(valor_ytd_atual):
+    """Calcula variação % entre YTD atual e mesmo período de 2025 via df_comp."""
+    if df_comp_2025 is None or df_comp_2025.empty or pd.isna(valor_ytd_atual):
         return None
 
     linha_norm = normalizar_texto(linha)
-
-    # "Despesas Administrativas" é linha sintética (Diretas + Indiretas) — não existe
-    # diretamente no df_comp. Precisa somar as duas componentes de 2025.
     NORM_DESP_ADM = normalizar_texto("Despesas Administrativas")
     NORM_DESP_DIR = normalizar_texto("Despesas Administrativas Diretas")
     NORM_DESP_IND = normalizar_texto("Desp. Administrativas Indiretas")
 
     def buscar_valor_2025(norm_alvo):
-        """Busca valor Realizado de 2025 para uma linha normalizada."""
         if "Produto" in df_comp_2025.columns:
             base = df_comp_2025[
                 (df_comp_2025["Ano"] == 2025)
@@ -1507,7 +1492,6 @@ def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual
                 & (df_comp_2025["Linha_Normalizada"] == norm_alvo)
             ]
             if base.empty:
-                # fallback sem filtro de produto
                 base = df_comp_2025[
                     (df_comp_2025["Ano"] == 2025)
                     & (df_comp_2025["Linha_Normalizada"] == norm_alvo)
@@ -1517,14 +1501,12 @@ def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual
                 (df_comp_2025["Ano"] == 2025)
                 & (df_comp_2025["Linha_Normalizada"] == norm_alvo)
             ]
-
         if base.empty:
             return None
         v = pd.to_numeric(base["Realizado"].iloc[0], errors="coerce")
         return float(v) if pd.notna(v) else None
 
     if linha_norm == NORM_DESP_ADM:
-        # Soma Diretas + Indiretas de 2025
         v_dir = buscar_valor_2025(NORM_DESP_DIR)
         v_ind = buscar_valor_2025(NORM_DESP_IND)
         if v_dir is None and v_ind is None:
@@ -1618,7 +1600,6 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
 
             cor_classe = None
             variacao_exibir = None
-
             if variacao is not None and not pd.isna(variacao) and realizado < 0:
                 variacao_exibir = -variacao
                 cor_classe = "delta-negative" if float(variacao) < 0 else "delta-positive"
@@ -1709,17 +1690,38 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         & (df_pnl["Métrica"] == "Realizado")
     ].copy()
 
+    # Calcula variação por produto e monta rótulo composto: valor + variação
+    def texto_barra(row):
+        val_str = formatar_moeda(row["Valor"])
+        if pagina == "Acumulado":
+            var = variacao_pnl_acumulado_vs_2025(df_comp_2025, row["Produto"], linha_resultado_contabil, row["Valor"])
+            label_var = "vs 2025"
+        else:
+            var = variacao_pnl_mes_anterior(df_pnl_completo, row["Produto"], linha_resultado_contabil, data_sel_pnl)
+            label_var = "vs mês ant."
+
+        if var is None or pd.isna(var):
+            return val_str
+
+        # Sinal: para resultado contábil (positivo), sinal matemático direto
+        sinal = "+" if float(var) >= 0 else "−"
+        pct = f"{abs(float(var)) * 100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"{val_str}<br><span style='font-size:14px'>{sinal}{pct} {label_var}</span>"
+
+    base_produtos["Rótulo"] = base_produtos.apply(texto_barra, axis=1)
+
     fig_prod = px.bar(
         base_produtos,
         x="Produto",
         y="Valor",
-        text=base_produtos["Valor"].map(lambda v: formatar_moeda(v)),
+        text="Rótulo",
         labels={"Valor": "Realizado", "Produto": ""},
     )
     fig_prod.update_traces(
         textposition="inside",
         textfont=dict(size=18, family="Arial Black"),
         insidetextanchor="middle",
+        texttemplate="%{text}",
     )
     fig_prod.update_layout(
         template="plotly_dark",
