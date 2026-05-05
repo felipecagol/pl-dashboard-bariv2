@@ -1421,63 +1421,6 @@ def agregar_pnl_acumulado(df_pnl_periodo):
     return pd.concat([agrupado, df_delta], ignore_index=True)
 
 
-def variacao_pnl_acumulado_ano_anterior(df_pnl_completo, produto, linha, periodo_atual):
-    """Compara o YTD atual com o mesmo período do ano anterior.
-
-    Ex: mar/2026 selecionado → compara jan-mar/2026 vs jan-mar/2025.
-    Retorna None se não houver dados do ano anterior.
-    """
-    linha_atual = df_pnl_completo[
-        (df_pnl_completo["Produto"] == produto)
-        & (df_pnl_completo["Linha"] == linha)
-        & (df_pnl_completo["Métrica"] == "Realizado")
-        & (df_pnl_completo["Periodo"] == periodo_atual)
-    ]
-
-    if linha_atual.empty:
-        return None
-
-    data_atual = pd.Timestamp(linha_atual["Data"].iloc[0])
-    ano_atual = data_atual.year
-    mes_atual = data_atual.month
-
-    # YTD atual: jan/ano_atual até data_atual
-    data_inicio_atual = pd.Timestamp(ano_atual, 1, 1)
-    valor_ytd_atual = df_pnl_completo[
-        (df_pnl_completo["Produto"] == produto)
-        & (df_pnl_completo["Linha"] == linha)
-        & (df_pnl_completo["Métrica"] == "Realizado")
-        & (df_pnl_completo["Data"] >= data_inicio_atual)
-        & (df_pnl_completo["Data"] <= data_atual)
-    ]["Valor"].sum()
-
-    # YTD ano anterior: jan/ano_anterior até mesmo mês/ano_anterior
-    ano_anterior = ano_atual - 1
-    data_inicio_anterior = pd.Timestamp(ano_anterior, 1, 1)
-    # Último dia do mesmo mês no ano anterior
-    import calendar
-    ultimo_dia = calendar.monthrange(ano_anterior, mes_atual)[1]
-    data_fim_anterior = pd.Timestamp(ano_anterior, mes_atual, ultimo_dia)
-
-    base_anterior = df_pnl_completo[
-        (df_pnl_completo["Produto"] == produto)
-        & (df_pnl_completo["Linha"] == linha)
-        & (df_pnl_completo["Métrica"] == "Realizado")
-        & (df_pnl_completo["Data"] >= data_inicio_anterior)
-        & (df_pnl_completo["Data"] <= data_fim_anterior)
-    ]
-
-    if base_anterior.empty:
-        return None
-
-    valor_ytd_anterior = base_anterior["Valor"].sum()
-
-    if valor_ytd_anterior == 0:
-        return None
-
-    return (valor_ytd_atual - valor_ytd_anterior) / abs(valor_ytd_anterior)
-
-
 def variacao_pnl_acumulado_mes_anterior(df_pnl_completo, produto, linha, periodo_atual):
     linha_atual = df_pnl_completo[
         (df_pnl_completo["Produto"] == produto)
@@ -1531,7 +1474,56 @@ def variacao_pnl_acumulado_mes_anterior(df_pnl_completo, produto, linha, periodo
     return (valor_acumulado_atual - valor_acumulado_anterior) / abs(valor_acumulado_anterior)
 
 
-def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
+def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual):
+    """Calcula a variação % entre o YTD atual e o mesmo período de 2025.
+
+    df_comp_2025 : DataFrame de carregar_comparativo_2025 (tem Ano, Produto, Linha_Normalizada, Realizado)
+    produto      : 'Total', 'Consignado' ou 'Imobiliário'
+    linha        : nome da linha (string original)
+    valor_ytd_atual : float — valor já calculado do YTD atual (sum jan-mar/2026)
+
+    Retorna None se não houver dado de 2025 ou base for zero.
+    """
+    if df_comp_2025 is None or df_comp_2025.empty:
+        return None
+
+    if pd.isna(valor_ytd_atual):
+        return None
+
+    linha_norm = normalizar_texto(linha)
+
+    # df_comp tem colunas: Ano, Produto (às vezes não), Linha_Normalizada, Realizado
+    # Verifica se há coluna Produto
+    if "Produto" in df_comp_2025.columns:
+        base = df_comp_2025[
+            (df_comp_2025["Ano"] == 2025)
+            & (df_comp_2025["Produto"] == produto)
+            & (df_comp_2025["Linha_Normalizada"] == linha_norm)
+        ]
+        # Se não encontrou para o produto específico, tenta sem filtro de produto (Total)
+        if base.empty and produto == "Total":
+            base = df_comp_2025[
+                (df_comp_2025["Ano"] == 2025)
+                & (df_comp_2025["Linha_Normalizada"] == linha_norm)
+            ]
+    else:
+        base = df_comp_2025[
+            (df_comp_2025["Ano"] == 2025)
+            & (df_comp_2025["Linha_Normalizada"] == linha_norm)
+        ]
+
+    if base.empty:
+        return None
+
+    valor_2025 = pd.to_numeric(base["Realizado"].iloc[0], errors="coerce")
+
+    if pd.isna(valor_2025) or valor_2025 == 0:
+        return None
+
+    return (float(valor_ytd_atual) - float(valor_2025)) / abs(float(valor_2025))
+
+
+def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None):
     periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)
     lista_periodos_pnl = [item["Período"] for item in periodos_pnl]
 
@@ -1602,7 +1594,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
             realizado = valor_pnl(df_pnl, produto_sel_pnl, linha, "Realizado")
 
             if pagina == "Acumulado":
-                variacao = variacao_pnl_acumulado_ano_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
+                variacao = variacao_pnl_acumulado_vs_2025(df_comp_2025, produto_sel_pnl, linha, realizado)
                 variacao_label = "Δ mesmo período 2025"
             else:
                 variacao = variacao_pnl_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
@@ -2996,7 +2988,11 @@ with tab_pnl_mensal:
 
 with tab_pnl_acum:
     if erro_pnl_global is None and not df_pnl_completo_global.empty:
-        render_pnl_page(df_pnl_completo_global, arquivo, pagina="Acumulado")
+        try:
+            df_comp_para_acum = carregar_comparativo_2025(arquivo)
+        except Exception:
+            df_comp_para_acum = None
+        render_pnl_page(df_pnl_completo_global, arquivo, pagina="Acumulado", df_comp_2025=df_comp_para_acum)
     else:
         st.info(f"Não consegui carregar a aba P&L Acumulado: {erro_pnl_global}")
 
