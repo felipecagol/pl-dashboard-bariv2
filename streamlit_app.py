@@ -1475,7 +1475,7 @@ def variacao_pnl_acumulado_mes_anterior(df_pnl_completo, produto, linha, periodo
 
 
 def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual):
-    """Calcula variação % entre YTD atual e mesmo período de 2025 via df_comp."""
+    """Calcula variação % entre YTD atual e mesmo período de 2025 para o produto dado."""
     if df_comp_2025 is None or df_comp_2025.empty or pd.isna(valor_ytd_atual):
         return None
 
@@ -1485,22 +1485,11 @@ def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual
     NORM_DESP_IND = normalizar_texto("Desp. Administrativas Indiretas")
 
     def buscar_valor_2025(norm_alvo):
-        if "Produto" in df_comp_2025.columns:
-            base = df_comp_2025[
-                (df_comp_2025["Ano"] == 2025)
-                & (df_comp_2025["Produto"] == produto)
-                & (df_comp_2025["Linha_Normalizada"] == norm_alvo)
-            ]
-            if base.empty:
-                base = df_comp_2025[
-                    (df_comp_2025["Ano"] == 2025)
-                    & (df_comp_2025["Linha_Normalizada"] == norm_alvo)
-                ]
-        else:
-            base = df_comp_2025[
-                (df_comp_2025["Ano"] == 2025)
-                & (df_comp_2025["Linha_Normalizada"] == norm_alvo)
-            ]
+        base = df_comp_2025[
+            (df_comp_2025["Ano"] == 2025)
+            & (df_comp_2025["Produto"] == produto)
+            & (df_comp_2025["Linha_Normalizada"] == norm_alvo)
+        ]
         if base.empty:
             return None
         v = pd.to_numeric(base["Realizado"].iloc[0], errors="coerce")
@@ -1690,12 +1679,12 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         & (df_pnl["Métrica"] == "Realizado")
     ].copy()
 
-    # Calcula variação por produto e monta rótulo composto: valor + variação
     def texto_barra(row):
         val_str = formatar_moeda(row["Valor"])
+
         if pagina == "Acumulado":
             var = variacao_pnl_acumulado_vs_2025(df_comp_2025, row["Produto"], linha_resultado_contabil, row["Valor"])
-            label_var = "vs 2025"
+            label_var = "vs 1T2025"
         else:
             var = variacao_pnl_mes_anterior(df_pnl_completo, row["Produto"], linha_resultado_contabil, data_sel_pnl)
             label_var = "vs mês ant."
@@ -1703,7 +1692,6 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         if var is None or pd.isna(var):
             return val_str
 
-        # Sinal: para resultado contábil (positivo), sinal matemático direto
         sinal = "+" if float(var) >= 0 else "−"
         pct = f"{abs(float(var)) * 100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
         return f"{val_str}<br><span style='font-size:14px'>{sinal}{pct} {label_var}</span>"
@@ -2286,42 +2274,71 @@ def carregar_comparativo_2025(arquivo):
         except Exception:
             return pd.NA
 
-    # Bloco esquerdo: 2025, colunas TOTAL em H:J.
-    # Bloco direito: 2026, colunas TOTAL em V:X.
-    blocos = [
-        {"Ano": 2025, "label_col": 0, "realizado_col": 7, "orcado_col": 8, "delta_col": 9},
-        {"Ano": 2026, "label_col": 11, "realizado_col": 21, "orcado_col": 22, "delta_col": 23},
+    # Estrutura da aba (índices base-0):
+    # Bloco 2025: label em col 0
+    #   Consignado: real=1, orc=2, delta=3
+    #   Imobiliário: real=4, orc=5, delta=6
+    #   Total: real=7, orc=8, delta=9
+    # Bloco 2026: label em col 11
+    #   Consignado: real=12 (aprox), Imobiliário: real=15 (aprox), Total: real=21
+    # Para 2026 usamos as mesmas colunas relativas confirmadas pelo layout original (Total=21)
+    # Para Consignado/Imobiliário 2026 derivamos do mesmo offset relativo ao label.
+    blocos_2025 = [
+        {"Produto": "Consignado",  "label_col": 0, "realizado_col": 1,  "orcado_col": 2},
+        {"Produto": "Imobiliário", "label_col": 0, "realizado_col": 4,  "orcado_col": 5},
+        {"Produto": "Total",       "label_col": 0, "realizado_col": 7,  "orcado_col": 8},
+    ]
+    blocos_2026 = [
+        {"Produto": "Consignado",  "label_col": 11, "realizado_col": 13, "orcado_col": 14},
+        {"Produto": "Imobiliário", "label_col": 11, "realizado_col": 17, "orcado_col": 18},
+        {"Produto": "Total",       "label_col": 11, "realizado_col": 21, "orcado_col": 22},
     ]
 
     registros = []
-    for bloco in blocos:
+
+    for bloco in blocos_2025:
         for idx_row in bruto.index:
-            linha = bruto.iat[idx_row, bloco["label_col"]] if bloco["label_col"] in bruto.columns else None
+            linha = bruto.iat[idx_row, bloco["label_col"]] if bloco["label_col"] < len(bruto.columns) else None
             linha_norm = normalizar_texto(linha)
             if not linha_norm:
                 continue
-            realizado = valor_numero(bruto.iat[idx_row, bloco["realizado_col"]]) if bloco["realizado_col"] in bruto.columns else pd.NA
-            orcado = valor_numero(bruto.iat[idx_row, bloco["orcado_col"]]) if bloco["orcado_col"] in bruto.columns else pd.NA
-            delta = valor_numero(bruto.iat[idx_row, bloco["delta_col"]]) if bloco["delta_col"] in bruto.columns else pd.NA
+            realizado = valor_numero(bruto.iat[idx_row, bloco["realizado_col"]]) if bloco["realizado_col"] < len(bruto.columns) else pd.NA
+            orcado    = valor_numero(bruto.iat[idx_row, bloco["orcado_col"]])    if bloco["orcado_col"]    < len(bruto.columns) else pd.NA
+            registros.append({
+                "Ano": 2025,
+                "Produto": bloco["Produto"],
+                "Linha": str(linha).strip(),
+                "Linha_Normalizada": linha_norm,
+                "Realizado": realizado,
+                "Orçado": orcado,
+                "Ordem": int(idx_row),
+            })
 
-            registros.append(
-                {
-                    "Ano": bloco["Ano"],
-                    "Linha": str(linha).strip(),
-                    "Linha_Normalizada": linha_norm,
-                    "Realizado": realizado,
-                    "Orçado": orcado,
-                    "Δ Orçado": delta,
-                    "Ordem": int(idx_row),
-                }
-            )
+    for bloco in blocos_2026:
+        for idx_row in bruto.index:
+            linha = bruto.iat[idx_row, bloco["label_col"]] if bloco["label_col"] < len(bruto.columns) else None
+            linha_norm = normalizar_texto(linha)
+            if not linha_norm:
+                continue
+            realizado = valor_numero(bruto.iat[idx_row, bloco["realizado_col"]]) if bloco["realizado_col"] < len(bruto.columns) else pd.NA
+            orcado    = valor_numero(bruto.iat[idx_row, bloco["orcado_col"]])    if bloco["orcado_col"]    < len(bruto.columns) else pd.NA
+            registros.append({
+                "Ano": 2026,
+                "Produto": bloco["Produto"],
+                "Linha": str(linha).strip(),
+                "Linha_Normalizada": linha_norm,
+                "Realizado": realizado,
+                "Orçado": orcado,
+                "Ordem": int(idx_row),
+            })
 
     df = pd.DataFrame(registros)
     if df.empty:
         return df
 
-    # Remove duplicidade visual, mantendo a primeira ocorrência de cada linha por ano.
-    df = df.sort_values(["Ano", "Ordem"]).drop_duplicates(["Ano", "Linha_Normalizada"], keep="first")
+    df = df.sort_values(["Ano", "Produto", "Ordem"]).drop_duplicates(
+        ["Ano", "Produto", "Linha_Normalizada"], keep="first"
+    )
     return df
 
 
@@ -2554,8 +2571,8 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         encontrou_25a = False
 
         for norm_comp in componentes_desp_totais:
-            b26 = df_comp[(df_comp["Ano"] == 2026) & (df_comp["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False))]
-            b25 = df_comp[(df_comp["Ano"] == 2025) & (df_comp["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False))]
+            b26 = df_comp[(df_comp["Ano"] == 2026) & (df_comp["Produto"] == "Total") & (df_comp["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False))]
+            b25 = df_comp[(df_comp["Ano"] == 2025) & (df_comp["Produto"] == "Total") & (df_comp["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False))]
 
             if not b26.empty and pd.notna(b26["Realizado"].iloc[0]):
                 soma_26 += b26["Realizado"].iloc[0]
@@ -2583,8 +2600,8 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         if linha_norm == normalizar_texto("DESPESAS TOTAIS"):
             v26, v25, v25_acum = somar_componentes_desp(df_comp, 2026, df_2025_acumulado)
         else:
-            b25 = df_comp[(df_comp["Ano"] == 2025) & (df_comp["Linha_Normalizada"] == linha_norm)]
-            b26 = df_comp[(df_comp["Ano"] == 2026) & (df_comp["Linha_Normalizada"] == linha_norm)]
+            b25 = df_comp[(df_comp["Ano"] == 2025) & (df_comp["Produto"] == "Total") & (df_comp["Linha_Normalizada"] == linha_norm)]
+            b26 = df_comp[(df_comp["Ano"] == 2026) & (df_comp["Produto"] == "Total") & (df_comp["Linha_Normalizada"] == linha_norm)]
             b25_acum = (
                 df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"] == linha_norm]
                 if not df_2025_acumulado.empty and "Linha_Normalizada" in df_2025_acumulado.columns
