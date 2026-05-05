@@ -1552,12 +1552,15 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
             cor_classe = None
             variacao_exibir = None
 
-            if variacao is not None and not pd.isna(variacao) and realizado < 0 and float(variacao) < 0:
-                # Despesa/custo que piorou (cresceu em módulo):
-                # variacao matemática é negativa (ex: -0.547), mas o presidente quer ler "+54,7%" vermelho.
-                # Invertemos apenas o sinal exibido; cor permanece vermelho (delta-negative).
+            if variacao is not None and not pd.isna(variacao) and realizado < 0:
+                # Linhas de custo/despesa (realizado negativo):
+                # A variação matemática (atual-anterior)/|anterior| tem sinal oposto
+                # à variação do módulo quando ambos são negativos.
+                # Ex: -1,05 vs -1,74 → variacao = +39% (número cresceu), mas módulo CAIU → exibe "−" verde
+                # Ex: -22,67 vs -14,6 → variacao = -55% (número caiu), mas módulo CRESCEU → exibe "+" vermelho
+                # Regra: inverter sempre o sinal exibido; cor pelo módulo (positivo = cresceu = ruim)
                 variacao_exibir = -variacao
-                cor_classe = "delta-negative"
+                cor_classe = "delta-negative" if float(variacao) < 0 else "delta-positive"
 
             with col_card:
                 card_pnl(linha, realizado, variacao=variacao, cor_classe=cor_classe, variacao_exibir=variacao_exibir)
@@ -1678,10 +1681,6 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
 
 
 def card_pnl(titulo, valor, variacao=None, variacao_label="Δ mês anterior", cor_classe=None, variacao_exibir=None):
-    """
-    cor_classe    : string CSS opcional ('delta-positive'/'delta-negative') — substitui a cor automática
-    variacao_exibir: float opcional — valor usado no texto exibido; se None usa variacao
-    """
     if variacao is None or pd.isna(variacao):
         delta_html = '<div class="kpi-delta delta-neutral">N/D</div>'
     else:
