@@ -1421,6 +1421,63 @@ def agregar_pnl_acumulado(df_pnl_periodo):
     return pd.concat([agrupado, df_delta], ignore_index=True)
 
 
+def variacao_pnl_acumulado_ano_anterior(df_pnl_completo, produto, linha, periodo_atual):
+    """Compara o YTD atual com o mesmo período do ano anterior.
+
+    Ex: mar/2026 selecionado → compara jan-mar/2026 vs jan-mar/2025.
+    Retorna None se não houver dados do ano anterior.
+    """
+    linha_atual = df_pnl_completo[
+        (df_pnl_completo["Produto"] == produto)
+        & (df_pnl_completo["Linha"] == linha)
+        & (df_pnl_completo["Métrica"] == "Realizado")
+        & (df_pnl_completo["Periodo"] == periodo_atual)
+    ]
+
+    if linha_atual.empty:
+        return None
+
+    data_atual = pd.Timestamp(linha_atual["Data"].iloc[0])
+    ano_atual = data_atual.year
+    mes_atual = data_atual.month
+
+    # YTD atual: jan/ano_atual até data_atual
+    data_inicio_atual = pd.Timestamp(ano_atual, 1, 1)
+    valor_ytd_atual = df_pnl_completo[
+        (df_pnl_completo["Produto"] == produto)
+        & (df_pnl_completo["Linha"] == linha)
+        & (df_pnl_completo["Métrica"] == "Realizado")
+        & (df_pnl_completo["Data"] >= data_inicio_atual)
+        & (df_pnl_completo["Data"] <= data_atual)
+    ]["Valor"].sum()
+
+    # YTD ano anterior: jan/ano_anterior até mesmo mês/ano_anterior
+    ano_anterior = ano_atual - 1
+    data_inicio_anterior = pd.Timestamp(ano_anterior, 1, 1)
+    # Último dia do mesmo mês no ano anterior
+    import calendar
+    ultimo_dia = calendar.monthrange(ano_anterior, mes_atual)[1]
+    data_fim_anterior = pd.Timestamp(ano_anterior, mes_atual, ultimo_dia)
+
+    base_anterior = df_pnl_completo[
+        (df_pnl_completo["Produto"] == produto)
+        & (df_pnl_completo["Linha"] == linha)
+        & (df_pnl_completo["Métrica"] == "Realizado")
+        & (df_pnl_completo["Data"] >= data_inicio_anterior)
+        & (df_pnl_completo["Data"] <= data_fim_anterior)
+    ]
+
+    if base_anterior.empty:
+        return None
+
+    valor_ytd_anterior = base_anterior["Valor"].sum()
+
+    if valor_ytd_anterior == 0:
+        return None
+
+    return (valor_ytd_atual - valor_ytd_anterior) / abs(valor_ytd_anterior)
+
+
 def variacao_pnl_acumulado_mes_anterior(df_pnl_completo, produto, linha, periodo_atual):
     linha_atual = df_pnl_completo[
         (df_pnl_completo["Produto"] == produto)
@@ -1545,25 +1602,22 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal"):
             realizado = valor_pnl(df_pnl, produto_sel_pnl, linha, "Realizado")
 
             if pagina == "Acumulado":
-                variacao = variacao_pnl_acumulado_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
+                variacao = variacao_pnl_acumulado_ano_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
+                variacao_label = "Δ mesmo período 2025"
             else:
                 variacao = variacao_pnl_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
+                variacao_label = "Δ mês anterior"
 
             cor_classe = None
             variacao_exibir = None
 
             if variacao is not None and not pd.isna(variacao) and realizado < 0:
-                # Linhas de custo/despesa (realizado negativo):
-                # A variação matemática (atual-anterior)/|anterior| tem sinal oposto
-                # à variação do módulo quando ambos são negativos.
-                # Ex: -1,05 vs -1,74 → variacao = +39% (número cresceu), mas módulo CAIU → exibe "−" verde
-                # Ex: -22,67 vs -14,6 → variacao = -55% (número caiu), mas módulo CRESCEU → exibe "+" vermelho
-                # Regra: inverter sempre o sinal exibido; cor pelo módulo (positivo = cresceu = ruim)
                 variacao_exibir = -variacao
                 cor_classe = "delta-negative" if float(variacao) < 0 else "delta-positive"
 
             with col_card:
-                card_pnl(linha, realizado, variacao=variacao, cor_classe=cor_classe, variacao_exibir=variacao_exibir)
+                card_pnl(linha, realizado, variacao=variacao, variacao_label=variacao_label,
+                         cor_classe=cor_classe, variacao_exibir=variacao_exibir)
 
     st.markdown(f'<div class="section-title">{titulo_comparativo}</div>', unsafe_allow_html=True)
 
