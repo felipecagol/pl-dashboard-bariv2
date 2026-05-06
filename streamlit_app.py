@@ -1512,6 +1512,14 @@ def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual
 
 def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None):
     periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)
+
+    if pagina == "Acumulado":
+        # Filtra apenas períodos de fim de trimestre (mar, jun, set, dez)
+        meses_fim_trimestre = {3, 6, 9, 12}
+        periodos_pnl = [p for p in periodos_pnl if p["Data"] is not None and p["Data"].month in meses_fim_trimestre]
+        if not periodos_pnl:
+            periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)  # fallback
+
     lista_periodos_pnl = [item["Período"] for item in periodos_pnl]
 
     st.markdown('<div class="section-title">Filtros</div>', unsafe_allow_html=True)
@@ -1683,7 +1691,28 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         val_str = formatar_moeda(row["Valor"])
 
         if pagina == "Acumulado":
-            var = variacao_pnl_acumulado_vs_2025(df_comp_2025, row["Produto"], linha_resultado_contabil, row["Valor"])
+            # Calcula variação diretamente da planilha: (RC_2026 / RC_2025) - 1
+            # Busca o valor 2026 e 2025 do df_comp para este produto
+            if df_comp_2025 is not None and not df_comp_2025.empty:
+                linha_norm = normalizar_texto(linha_resultado_contabil)
+                b26 = df_comp_2025[
+                    (df_comp_2025["Ano"] == 2026)
+                    & (df_comp_2025["Produto"] == row["Produto"])
+                    & (df_comp_2025["Linha_Normalizada"] == linha_norm)
+                ]
+                b25 = df_comp_2025[
+                    (df_comp_2025["Ano"] == 2025)
+                    & (df_comp_2025["Produto"] == row["Produto"])
+                    & (df_comp_2025["Linha_Normalizada"] == linha_norm)
+                ]
+                v26 = pd.to_numeric(b26["Realizado"].iloc[0], errors="coerce") if not b26.empty else None
+                v25 = pd.to_numeric(b25["Realizado"].iloc[0], errors="coerce") if not b25.empty else None
+                if v26 is not None and v25 is not None and pd.notna(v26) and pd.notna(v25) and v25 != 0:
+                    var = (float(v26) / float(v25)) - 1
+                else:
+                    var = None
+            else:
+                var = None
             label_var = "vs 1T2025"
         else:
             var = variacao_pnl_mes_anterior(df_pnl_completo, row["Produto"], linha_resultado_contabil, data_sel_pnl)
