@@ -140,25 +140,27 @@ CSS = """
         text-align: center;
         display: flex;
         flex-direction: column;
-        justify-content: flex-start;
+        justify-content: center;
         align-items: center;
         margin-top: 10px;
+        position: relative;
     }
     .side-card-label {
         color: #ffffff;
         font-size: 1.05rem;
         font-weight: 700;
-        margin-bottom: 0;
-        margin-top: 0;
-        padding-top: 0;
-        width: 100%;
+        position: absolute;
+        top: 28px;
+        left: 24px;
+        right: 24px;
+        text-align: center;
     }
     .side-card-value {
         color: #ffffff;
         font-size: 2.6rem;
         font-weight: 900;
         line-height: 1.1;
-        margin-top: auto;
+        margin-top: 0;
     }
     .side-card-delta {
         font-size: 1.45rem;
@@ -178,14 +180,18 @@ CSS = """
         align-items: stretch;
         text-align: left;
         padding: 28px 22px;
-        justify-content: flex-start;
+        justify-content: center;
+        position: relative;
     }
     .composition-title {
         color: #ffffff;
         font-size: 1.0rem;
         font-weight: 700;
         text-align: center;
-        margin-bottom: 18px;
+        position: absolute;
+        top: 28px;
+        left: 22px;
+        right: 22px;
     }
     .composition-row {
         margin-bottom: 22px;
