@@ -27,7 +27,7 @@ CSS = """
     [data-testid="stHeader"] { background: rgba(8, 15, 31, .95); }
     .block-container { padding-top: 1.4rem; padding-bottom: 2rem; }
     .dash-title { font-size: 2.25rem; font-weight: 850; color: #ffffff; letter-spacing: .2px; margin-bottom: .2rem; }
-    .dash-subtitle { color: #9fb2df; font-size: .95rem; margin-bottom: 1.3rem; }
+    .dash-subtitle { color: #ffffff; font-size: .95rem; margin-bottom: 1.3rem; }
     .section-title { color: #ffffff; font-size: 1.25rem; font-weight: 750; margin-top: 1.1rem; margin-bottom: .6rem; }
     .kpi-card {
         background: #111a2e;
@@ -134,13 +134,13 @@ CSS = """
         background: #111a2e;
         border: 1px solid #243150;
         border-radius: 16px;
-        padding: 32px 24px;
+        padding: 28px 24px;
         min-height: 480px;
         box-shadow: 0 10px 26px rgba(0,0,0,.20);
         text-align: center;
         display: flex;
         flex-direction: column;
-        justify-content: center;
+        justify-content: flex-start;
         align-items: center;
         margin-top: 10px;
     }
@@ -148,13 +148,17 @@ CSS = """
         color: #ffffff;
         font-size: 1.05rem;
         font-weight: 700;
-        margin-bottom: 18px;
+        margin-bottom: 0;
+        margin-top: 0;
+        padding-top: 0;
+        width: 100%;
     }
     .side-card-value {
         color: #ffffff;
         font-size: 2.6rem;
         font-weight: 900;
         line-height: 1.1;
+        margin-top: auto;
     }
     .side-card-delta {
         font-size: 1.45rem;
@@ -174,9 +178,10 @@ CSS = """
         align-items: stretch;
         text-align: left;
         padding: 28px 22px;
+        justify-content: flex-start;
     }
     .composition-title {
-        color: #9fb2df;
+        color: #ffffff;
         font-size: 1.0rem;
         font-weight: 700;
         text-align: center;
@@ -204,7 +209,7 @@ CSS = """
         text-align: right;
     }
     .composition-pct {
-        color: #9fb2df;
+        color: #ffffff;
         font-size: .95rem;
         font-weight: 700;
         min-width: 48px;
@@ -224,7 +229,7 @@ CSS = """
         background: linear-gradient(90deg, #24a8ff 0%, #7cc4ff 100%);
     }
     .composition-help {
-        color: #60759f;
+        color: #ffffff;
         font-size: .88rem;
         margin-top: 10px;
         line-height: 1.3;
@@ -249,21 +254,21 @@ CSS = """
     }
     .delta-positive { color: #22c55e; }
     .delta-negative { color: #ef4444; }
-    .delta-neutral { color: #9fb2df; }
+    .delta-neutral { color: #ffffff; }
     .note-box {
         background: #111a2e;
         border: 1px solid #243150;
         border-radius: 14px;
         padding: 13px 16px;
-        color: #9fb2df;
+        color: #ffffff;
     }
     .stTabs [data-baseweb="tab-list"] { gap: 10px; border-bottom: 1px solid #243150; }
-    .stTabs [data-baseweb="tab"] { color: #9fb2df; background: transparent; }
+    .stTabs [data-baseweb="tab"] { color: #ffffff; background: transparent; }
     .stTabs [aria-selected="true"] { color: #ffffff; border-bottom: 2px solid #24a8ff; }
 
     /* Botão de toggle da sidebar */
     [data-testid="collapsedControl"] {
-        color: #9fb2df !important;
+        color: #ffffff !important;
         background: #0b1224 !important;
         border: 1px solid #1e2a44 !important;
         border-radius: 8px !important;
@@ -346,7 +351,7 @@ CSS = """
         font-weight: 900;
     }
     table.dash-table td.delta-neutral {
-        color: #9fb2df;
+        color: #ffffff;
         font-weight: 850;
     }
 </style>
@@ -2768,7 +2773,7 @@ def grafico_alcance_vs_orcado(valor_acumulado, valor_orcado):
             number={"suffix": "%", "font": {"size": 62, "color": "#ffffff", "family": "Arial Black"}},
             title={"text": "<b>Resultado Contábil acumulado vs Orçado 2026</b>", "font": {"size": 17, "color": "#ffffff"}},
             gauge={
-                "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#9fb2df", "size": 12}},
+                "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#ffffff", "size": 12}},
                 "bar": {"color": cor_barra, "thickness": 0.38},
                 "bgcolor": "#111a2e",
                 "bordercolor": "#243150",
@@ -2794,7 +2799,7 @@ def grafico_alcance_vs_orcado(valor_acumulado, valor_orcado):
             f"<b>Orçado 2026:</b> {formatar_moeda(base)}<br>"
             f"{texto_status}"
         ),
-        font={"size": 15, "color": "#9fb2df"},
+        font={"size": 15, "color": "#ffffff"},
     )
 
     fig.update_layout(
@@ -2826,7 +2831,7 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
             number={"suffix": "%", "font": {"size": 56, "color": "#ffffff", "family": "Arial Black"}},
             title={"text": "<b>Resultado Contábil 1T26 x acumulado de 2025</b>", "font": {"size": 22, "color": "#ffffff"}},
             gauge={
-                "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#9fb2df", "size": 14}},
+                "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#ffffff", "size": 14}},
                 "bar": {"color": cor_barra, "thickness": 0.38},
                 "bgcolor": "#111a2e",
                 "bordercolor": "#243150",
@@ -2855,7 +2860,7 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
             f"<b>Acumulado de 2025:</b> {formatar_moeda(base)}<br>"
             f"{texto_status}"
         ),
-        font={"size": 15, "color": "#9fb2df"},
+        font={"size": 15, "color": "#ffffff"},
     )
 
     fig.update_layout(
