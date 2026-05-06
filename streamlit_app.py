@@ -2176,12 +2176,12 @@ def card_composicao_resultado_total_acumulado(df_pnl_completo, periodo_atual, em
         st.markdown(html, unsafe_allow_html=True)
         return
 
-    max_pct = max((abs(item["pct"]) for item in itens if item["pct"] is not None), default=0)
     html_rows = []
     for item in itens:
         pct = item["pct"] if item["pct"] is not None else 0.0
         pct_texto = f"{pct * 100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
-        largura = 0 if max_pct == 0 else max(6, abs(pct) / max_pct * 100)
+        # Largura da barra = percentual real (ex: 79,3% → barra 79,3% preenchida)
+        largura = max(3, abs(pct) * 100)
         row_html = (
             '<div class="composition-row">'
             '<div class="composition-head">'
