@@ -2622,6 +2622,15 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         delta_pct = delta_rs / abs(v25) if pd.notna(delta_rs) and v25 not in [0, 0.0] and pd.notna(v25) else pd.NA
         alcance = v26 / abs(v25_acum) if pd.notna(v25_acum) and v25_acum not in [0, 0.0] and pd.notna(v26) else pd.NA
 
+        # Linha de custo/despesa: ambos negativos → aumentar o módulo é ruim
+        ambos_neg = pd.notna(v25) and pd.notna(v26) and float(v25) < 0 and float(v26) < 0
+        if ambos_neg:
+            delta_bad = abs(float(v26)) > abs(float(v25)) if pd.notna(delta_rs) else False
+        elif pd.notna(v25) and pd.notna(v26):
+            delta_bad = float(v26) < float(v25)
+        else:
+            delta_bad = False
+
         linhas.append(
             {
                 "Linha": linha_ref,
@@ -2633,6 +2642,8 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
                 "Δ %": delta_pct,
                 "Alcance 2025": alcance,
                 "Ordem": ordem,
+                "_delta_bad": delta_bad,
+                "_ambos_neg": ambos_neg,
             }
         )
     return pd.DataFrame(linhas)
@@ -2680,7 +2691,15 @@ def tabela_html_comparativo(df):
             elif col in ["Δ %", "Alcance 2025"]:
                 texto = formatar_percentual_simples(valor)
                 if col == "Δ %" and pd.notna(valor):
-                    classes.append("delta-positive" if valor >= 0 else "delta-negative")
+                    ambos_neg = row.get("_ambos_neg", False)
+                    delta_bad = row.get("_delta_bad", False)
+                    # Sinal exibido: para despesas (ambos negativos), inverter
+                    # para que "despesa cresceu" apareça como "+"
+                    valor_exibir = -float(valor) if ambos_neg else float(valor)
+                    sinal = "+" if valor_exibir >= 0 else "−"
+                    pct = f"{abs(valor_exibir) * 100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+                    texto = f"{sinal}{pct}"
+                    classes.append("delta-negative" if delta_bad else "delta-positive")
             else:
                 texto = str(valor)
             cls = f' class="{" ".join(classes)}"' if classes else ""
