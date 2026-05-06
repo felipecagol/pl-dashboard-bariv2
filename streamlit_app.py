@@ -2749,6 +2749,65 @@ def obter_linha_comparativo(df_comp_principais, linha_ref):
     return df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).eq(linha_norm)]
 
 
+def grafico_alcance_vs_orcado(valor_acumulado, valor_orcado):
+    """Velocímetro: resultado acumulado 2026 vs orçado 2026."""
+    if pd.isna(valor_acumulado) or pd.isna(valor_orcado) or float(valor_orcado) == 0:
+        return None
+
+    base = abs(float(valor_orcado))
+    realizado = float(valor_acumulado)
+    alcance = realizado / base
+    alcance_pct = alcance * 100
+    eixo_max = max(100.0, alcance_pct * 1.25)
+    cor_barra = "#24a8ff" if alcance_pct <= 100 else "#22c55e"
+
+    fig = go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=alcance_pct,
+            number={"suffix": "%", "font": {"size": 44, "color": "#ffffff", "family": "Arial Black"}},
+            title={"text": "<b>Resultado Contábil acumulado vs Orçado 2026</b>", "font": {"size": 15, "color": "#ffffff"}},
+            gauge={
+                "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#9fb2df", "size": 12}},
+                "bar": {"color": cor_barra, "thickness": 0.38},
+                "bgcolor": "#111a2e",
+                "bordercolor": "#243150",
+                "borderwidth": 1,
+                "steps": [{"range": [0, min(100.0, eixo_max)], "color": "#162338"}],
+                "threshold": {"line": {"color": "#ef4444", "width": 4}, "thickness": 0.85, "value": 100},
+            },
+        )
+    )
+
+    diferenca = realizado - base
+    if diferenca >= 0:
+        texto_status = f"<b>Superou o orçado em:</b> {formatar_moeda(diferenca)}"
+    else:
+        texto_status = f"<b>Falta para alcançar o orçado:</b> {formatar_moeda(abs(diferenca))}"
+
+    fig.add_annotation(
+        x=0.5, y=-0.22,
+        xref="paper", yref="paper",
+        showarrow=False, align="center",
+        text=(
+            f"<b>Realizado acumulado:</b> {formatar_moeda(realizado)}<br>"
+            f"<b>Orçado 2026:</b> {formatar_moeda(base)}<br>"
+            f"{texto_status}"
+        ),
+        font={"size": 13, "color": "#9fb2df"},
+    )
+
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="#080f1f",
+        plot_bgcolor="#080f1f",
+        height=420,
+        margin=dict(l=30, r=30, t=60, b=120),
+    )
+
+    return fig
+
+
 def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
     if pd.isna(valor_2026) or pd.isna(valor_base_2025) or float(valor_base_2025) == 0:
         return None
@@ -3055,6 +3114,12 @@ with tab_resultados:
             )
             card_resultado_total_acumulado(valor_acumulado, variacao_acumulado, valor_acumulado_anterior, periodo_sel)
             card_composicao_resultado_total_acumulado(df_pnl_completo_global, periodo_sel, empresa_sel_result)
+
+            # Velocímetro: resultado acumulado vs orçado 2026
+            ORCADO_2026 = 73_400_000.0
+            fig_gauge = grafico_alcance_vs_orcado(valor_acumulado, ORCADO_2026)
+            if fig_gauge is not None:
+                st.plotly_chart(fig_gauge, use_container_width=True)
 
     st.markdown('<div class="section-title">Resultado aberto por empresa</div>', unsafe_allow_html=True)
 
