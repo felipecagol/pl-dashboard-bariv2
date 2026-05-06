@@ -1698,19 +1698,26 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
 
     base_produtos["Rótulo"] = base_produtos.apply(texto_barra, axis=1)
 
-    fig_prod = px.bar(
-        base_produtos,
-        x="Produto",
-        y="Valor",
-        text="Rótulo",
-        labels={"Valor": "Realizado", "Produto": ""},
-    )
-    fig_prod.update_traces(
-        textposition="inside",
-        textfont=dict(size=18, family="Arial Black"),
+    # Usa go.Bar para permitir textposition diferente por barra.
+    # Barras com valor < 20% do máximo recebem texto acima ("outside") para legibilidade.
+    max_val = base_produtos["Valor"].max() if not base_produtos.empty else 1
+    threshold = max_val * 0.20
+
+    text_positions = [
+        "outside" if row["Valor"] < threshold else "inside"
+        for _, row in base_produtos.iterrows()
+    ]
+
+    fig_prod = go.Figure(go.Bar(
+        x=base_produtos["Produto"],
+        y=base_produtos["Valor"],
+        text=base_produtos["Rótulo"],
+        textposition=text_positions,
+        textfont=dict(size=16, family="Arial Black", color="#FFFFFF"),
         insidetextanchor="middle",
         texttemplate="%{text}",
-    )
+        marker_color="#1d6ff2",
+    ))
     fig_prod.update_layout(
         template="plotly_dark",
         paper_bgcolor="#080f1f",
