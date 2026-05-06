@@ -134,8 +134,8 @@ CSS = """
         background: #111a2e;
         border: 1px solid #243150;
         border-radius: 16px;
-        padding: 22px 20px;
-        min-height: 245px;
+        padding: 32px 24px;
+        min-height: 480px;
         box-shadow: 0 10px 26px rgba(0,0,0,.20);
         text-align: center;
         display: flex;
@@ -146,73 +146,73 @@ CSS = """
     }
     .side-card-label {
         color: #ffffff;
-        font-size: .92rem;
+        font-size: 1.05rem;
         font-weight: 700;
-        margin-bottom: 12px;
+        margin-bottom: 18px;
     }
     .side-card-value {
         color: #ffffff;
-        font-size: 2.05rem;
+        font-size: 2.6rem;
         font-weight: 900;
         line-height: 1.1;
     }
     .side-card-delta {
-        font-size: 1.25rem;
+        font-size: 1.45rem;
         font-weight: 900;
-        margin-top: 12px;
+        margin-top: 16px;
     }
     .side-card-help {
         color: #ffffff;
-        font-size: .82rem;
+        font-size: .95rem;
         font-weight: 700;
-        margin-top: 12px;
-        line-height: 1.25;
+        margin-top: 16px;
+        line-height: 1.35;
     }
 
     .composition-card {
-        min-height: 230px;
+        min-height: 480px;
         align-items: stretch;
         text-align: left;
-        padding: 18px 18px;
+        padding: 28px 22px;
     }
     .composition-title {
         color: #9fb2df;
-        font-size: .86rem;
+        font-size: 1.0rem;
         font-weight: 700;
         text-align: center;
-        margin-bottom: 12px;
+        margin-bottom: 18px;
     }
     .composition-row {
-        margin-bottom: 12px;
+        margin-bottom: 22px;
     }
     .composition-head {
         display: flex;
         justify-content: space-between;
         gap: 10px;
-        margin-bottom: 5px;
+        margin-bottom: 8px;
         align-items: baseline;
     }
     .composition-name {
         color: #ffffff;
-        font-size: .82rem;
+        font-size: 1.05rem;
         font-weight: 700;
     }
     .composition-value {
         color: #ffffff;
-        font-size: .82rem;
+        font-size: 1.05rem;
         font-weight: 800;
         text-align: right;
     }
     .composition-pct {
         color: #9fb2df;
-        font-size: .74rem;
+        font-size: .95rem;
         font-weight: 700;
-        min-width: 42px;
+        min-width: 48px;
         text-align: right;
     }
     .composition-bar-wrap {
         width: 100%;
-        height: 8px;
+        height: 10px;
         border-radius: 999px;
         overflow: hidden;
         background: #0b1224;
@@ -225,8 +225,8 @@ CSS = """
     }
     .composition-help {
         color: #60759f;
-        font-size: .76rem;
-        margin-top: 6px;
+        font-size: .88rem;
+        margin-top: 10px;
         line-height: 1.3;
         text-align: center;
     }
