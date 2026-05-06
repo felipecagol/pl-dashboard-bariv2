@@ -2281,24 +2281,30 @@ def carregar_comparativo_2025(arquivo):
         except Exception:
             return pd.NA
 
-    # Estrutura da aba (índices base-0):
-    # Bloco 2025: label em col 0
-    #   Consignado: real=1, orc=2, delta=3
-    #   Imobiliário: real=4, orc=5, delta=6
-    #   Total: real=7, orc=8, delta=9
-    # Bloco 2026: label em col 11
-    #   Consignado: real=12 (aprox), Imobiliário: real=15 (aprox), Total: real=21
-    # Para 2026 usamos as mesmas colunas relativas confirmadas pelo layout original (Total=21)
-    # Para Consignado/Imobiliário 2026 derivamos do mesmo offset relativo ao label.
-    blocos_2025 = [
-        {"Produto": "Consignado",  "label_col": 0, "realizado_col": 1,  "orcado_col": 2},
-        {"Produto": "Imobiliário", "label_col": 0, "realizado_col": 4,  "orcado_col": 5},
-        {"Produto": "Total",       "label_col": 0, "realizado_col": 7,  "orcado_col": 8},
-    ]
+    # Mapeamento confirmado inspecionando a planilha (índices base-0):
+    #
+    # BLOCO 2026 (esquerdo, cols A-N):
+    #   Label: col 1
+    #   Banco Digital: Realizado=2, Orçado=3
+    #   Consignado:    Realizado=5, Orçado=6
+    #   Imobiliário:   Realizado=8, Orçado=9
+    #   Total:         Realizado=11, Orçado=12
+    #
+    # BLOCO 2025 (direito, cols P-AB):
+    #   Label: col 15
+    #   Banco Digital: Realizado=16, Orçado=17
+    #   Consignado:    Realizado=19, Orçado=20
+    #   Imobiliário:   Realizado=22, Orçado=23
+    #   Total:         Realizado=25, Orçado=26
     blocos_2026 = [
-        {"Produto": "Consignado",  "label_col": 11, "realizado_col": 13, "orcado_col": 14},
-        {"Produto": "Imobiliário", "label_col": 11, "realizado_col": 17, "orcado_col": 18},
-        {"Produto": "Total",       "label_col": 11, "realizado_col": 21, "orcado_col": 22},
+        {"Produto": "Consignado",  "label_col": 1,  "realizado_col": 5,  "orcado_col": 6},
+        {"Produto": "Imobiliário", "label_col": 1,  "realizado_col": 8,  "orcado_col": 9},
+        {"Produto": "Total",       "label_col": 1,  "realizado_col": 11, "orcado_col": 12},
+    ]
+    blocos_2025 = [
+        {"Produto": "Consignado",  "label_col": 15, "realizado_col": 19, "orcado_col": 20},
+        {"Produto": "Imobiliário", "label_col": 15, "realizado_col": 22, "orcado_col": 23},
+        {"Produto": "Total",       "label_col": 15, "realizado_col": 25, "orcado_col": 26},
     ]
 
     registros = []
