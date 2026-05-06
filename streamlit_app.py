@@ -2765,8 +2765,8 @@ def grafico_alcance_vs_orcado(valor_acumulado, valor_orcado):
         go.Indicator(
             mode="gauge+number",
             value=alcance_pct,
-            number={"suffix": "%", "font": {"size": 44, "color": "#ffffff", "family": "Arial Black"}},
-            title={"text": "<b>Resultado Contábil acumulado vs Orçado 2026</b>", "font": {"size": 15, "color": "#ffffff"}},
+            number={"suffix": "%", "font": {"size": 62, "color": "#ffffff", "family": "Arial Black"}},
+            title={"text": "<b>Resultado Contábil acumulado vs Orçado 2026</b>", "font": {"size": 17, "color": "#ffffff"}},
             gauge={
                 "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#9fb2df", "size": 12}},
                 "bar": {"color": cor_barra, "thickness": 0.38},
@@ -2794,15 +2794,15 @@ def grafico_alcance_vs_orcado(valor_acumulado, valor_orcado):
             f"<b>Orçado 2026:</b> {formatar_moeda(base)}<br>"
             f"{texto_status}"
         ),
-        font={"size": 13, "color": "#9fb2df"},
+        font={"size": 15, "color": "#9fb2df"},
     )
 
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor="#080f1f",
         plot_bgcolor="#080f1f",
-        height=420,
-        margin=dict(l=30, r=30, t=60, b=120),
+        height=480,
+        margin=dict(l=30, r=30, t=70, b=130),
     )
 
     return fig
@@ -3027,95 +3027,99 @@ with tab_resultados:
     if df_principais.empty:
         st.warning("Não encontrei as linhas principais na aba RESULTADO. Verifique os nomes das linhas na planilha.")
     else:
-        col_grafico, col_card_variacao = st.columns([5.2, 1])
+        # Gráfico de linhas ocupa largura total
+        base_linhas = df_principais.sort_values(["Indicador", "Data"]).copy()
+        base_linhas["Rótulo"] = base_linhas["Valor"].map(formatar_moeda_curta)
 
-        with col_grafico:
-            base_linhas = df_principais.sort_values(["Indicador", "Data"]).copy()
-            base_linhas["Rótulo"] = base_linhas["Valor"].map(formatar_moeda_curta)
+        fig = px.line(
+            base_linhas,
+            x="Data",
+            y="Valor",
+            color="Indicador",
+            markers=True,
+            line_shape="spline",
+            labels={"Data": "Mês", "Valor": "Resultado", "Indicador": "Resultado"},
+        )
 
-            fig = px.line(
-                base_linhas,
-                x="Data",
-                y="Valor",
-                color="Indicador",
-                markers=True,
-                line_shape="spline",
-                labels={"Data": "Mês", "Valor": "Resultado", "Indicador": "Resultado"},
+        for trace in fig.data:
+            trace.update(
+                mode="lines+markers",
+                cliponaxis=False,
             )
 
-            for trace in fig.data:
-                trace.update(
-                    mode="lines+markers",
-                    cliponaxis=False,
-                )
+        offsets_rotulo = {
+            "Resultado Total": {"xshift": 0, "yshift": 18, "xanchor": "center"},
+            "Resultado Conglomerado + Coligadas": {"xshift": 0, "yshift": -18, "xanchor": "center"},
+            "Resultado Conglomerado Financeiro": {"xshift": 0, "yshift": 18, "xanchor": "center"},
+            "Resultado Coligadas": {"xshift": 0, "yshift": -18, "xanchor": "center"},
+        }
 
-            offsets_rotulo = {
-                "Resultado Total": {"xshift": 0, "yshift": 18, "xanchor": "center"},
-                "Resultado Conglomerado + Coligadas": {"xshift": 0, "yshift": -18, "xanchor": "center"},
-                "Resultado Conglomerado Financeiro": {"xshift": 0, "yshift": 18, "xanchor": "center"},
-                "Resultado Coligadas": {"xshift": 0, "yshift": -18, "xanchor": "center"},
-            }
-
-            for _, row in base_linhas.iterrows():
-                desloc = offsets_rotulo.get(row["Indicador"], {"xshift": 0, "yshift": 18, "xanchor": "center"})
-                fig.add_annotation(
-                    x=row["Data"],
-                    y=row["Valor"],
-                    text=f"<b>{row['Rótulo']}</b>",
-                    showarrow=False,
-                    xshift=desloc["xshift"],
-                    yshift=desloc["yshift"],
-                    font=dict(size=12, color="#FFFFFF", family="Arial Black"),
-                    xanchor=desloc["xanchor"],
-                    align="center",
-                    bgcolor="rgba(0,0,0,0)",
-                )
-
-            tick_datas = periodos_disponiveis["Data"].tolist()
-            tick_textos = periodos_disponiveis["Período"].tolist()
-
-            y_min = base_linhas["Valor"].min()
-            y_max = base_linhas["Valor"].max()
-            y_pad = max((y_max - y_min) * 0.24, 1)
-
-            x_min = min(tick_datas) - pd.DateOffset(days=8)
-            x_max = max(tick_datas) + pd.DateOffset(days=20)
-
-            fig.update_layout(
-                template="plotly_dark",
-                paper_bgcolor="#080f1f",
-                plot_bgcolor="#080f1f",
-                height=500,
-                margin=dict(l=10, r=40, t=35, b=20),
-                legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
+        for _, row in base_linhas.iterrows():
+            desloc = offsets_rotulo.get(row["Indicador"], {"xshift": 0, "yshift": 18, "xanchor": "center"})
+            fig.add_annotation(
+                x=row["Data"],
+                y=row["Valor"],
+                text=f"<b>{row['Rótulo']}</b>",
+                showarrow=False,
+                xshift=desloc["xshift"],
+                yshift=desloc["yshift"],
+                font=dict(size=12, color="#FFFFFF", family="Arial Black"),
+                xanchor=desloc["xanchor"],
+                align="center",
+                bgcolor="rgba(0,0,0,0)",
             )
-            fig.update_xaxes(
-                tickmode="array",
-                tickvals=tick_datas,
-                ticktext=tick_textos,
-                range=[x_min, x_max],
-                title_text="",
-                showgrid=False,
-                zeroline=False,
-            )
-            fig.update_yaxes(
-                tickprefix="R$ ",
-                separatethousands=True,
-                range=[y_min - y_pad, y_max + y_pad],
-                title_text="",
-                showgrid=False,
-                zeroline=False,
-            )
-            st.plotly_chart(fig, use_container_width=True)
 
-        with col_card_variacao:
-            valor_acumulado, variacao_acumulado, valor_acumulado_anterior, data_inicio = resultado_total_acumulado_ano(
-                df_principais, periodo_sel
-            )
+        tick_datas = periodos_disponiveis["Data"].tolist()
+        tick_textos = periodos_disponiveis["Período"].tolist()
+
+        y_min = base_linhas["Valor"].min()
+        y_max = base_linhas["Valor"].max()
+        y_pad = max((y_max - y_min) * 0.24, 1)
+
+        x_min = min(tick_datas) - pd.DateOffset(days=8)
+        x_max = max(tick_datas) + pd.DateOffset(days=20)
+
+        fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="#080f1f",
+            plot_bgcolor="#080f1f",
+            height=500,
+            margin=dict(l=10, r=40, t=35, b=20),
+            legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
+        )
+        fig.update_xaxes(
+            tickmode="array",
+            tickvals=tick_datas,
+            ticktext=tick_textos,
+            range=[x_min, x_max],
+            title_text="",
+            showgrid=False,
+            zeroline=False,
+        )
+        fig.update_yaxes(
+            tickprefix="R$ ",
+            separatethousands=True,
+            range=[y_min - y_pad, y_max + y_pad],
+            title_text="",
+            showgrid=False,
+            zeroline=False,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Cards e velocímetro abaixo do gráfico em 3 colunas
+        col_acum, col_comp, col_gauge = st.columns([1, 1, 1.6])
+
+        valor_acumulado, variacao_acumulado, valor_acumulado_anterior, data_inicio = resultado_total_acumulado_ano(
+            df_principais, periodo_sel
+        )
+
+        with col_acum:
             card_resultado_total_acumulado(valor_acumulado, variacao_acumulado, valor_acumulado_anterior, periodo_sel)
+
+        with col_comp:
             card_composicao_resultado_total_acumulado(df_pnl_completo_global, periodo_sel, empresa_sel_result)
 
-            # Velocímetro: resultado acumulado vs orçado 2026
+        with col_gauge:
             ORCADO_2026 = 73_400_000.0
             fig_gauge = grafico_alcance_vs_orcado(valor_acumulado, ORCADO_2026)
             if fig_gauge is not None:
