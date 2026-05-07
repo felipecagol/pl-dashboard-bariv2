@@ -3148,7 +3148,9 @@ with tab_resultados:
         lambda row: pd.to_numeric(row, errors="coerce").sum(), axis=1
     )
 
-    # Separa linha de total, ordena o resto por Acumulado desc
+    # Reordena: períodos → Acumulado → Δ mês anterior
+    outras_cols = [c for c in tabela.columns if c not in ["Linha", "Acumulado", coluna_delta]]
+    tabela = tabela[["Linha"] + outras_cols + ["Acumulado", coluna_delta]]
     is_total = tabela["Linha"].str.lower().str.contains("resultado total", na=False)
     tabela_corpo = tabela[~is_total].sort_values("Acumulado", ascending=False)
     tabela_total = tabela[is_total]
