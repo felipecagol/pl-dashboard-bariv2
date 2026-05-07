@@ -1895,43 +1895,28 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
             row[(produto, "Orçado")] = orcado
             row[(produto, "Δ %")] = delta_pct
 
-            # Regra de cor:
-            # Quando ambos são negativos (linha de custo/despesa), o mais negativo (maior em módulo) é pior.
-            # Quando ambos são positivos, o menor realizado é pior.
-            # Quando há troca de sinal, compara diretamente.
-            # EXCEÇÃO 1: Alíquota de IR/CSLL é exibida em módulo — realizado MAIOR = PIOR.
-            # EXCEÇÃO 2: Rácio de Eficiência tem variação invertida (Orçado-Realizado)
-            # e é sempre apresentada em verde, conforme regra de negócio definida.
-            inverter_logica = linha_norm_card == normalizar_texto("Alíquota de IR/CSLL")
-
-            if pd.isna(realizado) or pd.isna(orcado):
-                delta_bad = False
-            elif racio_eficiencia:
-                # Sempre verde para Rácio de Eficiência
-                delta_bad = False
-            elif inverter_logica:
-                # Indicadores em módulo onde maior = pior
-                delta_bad = realizado > orcado
-            elif realizado < 0 and orcado < 0:
-                # Ambos negativos: mais negativo (maior abs) = pior
-                delta_bad = abs(realizado) > abs(orcado)
-            elif realizado < 0 or orcado < 0:
-                # Troca de sinal: realizado pior se mais negativo
-                delta_bad = realizado < orcado
-            else:
-                # Ambos positivos: realizado menor = pior
-                delta_bad = realizado < orcado
-
-            row[(produto, "_delta_bad")] = delta_bad
-            # Flag para inversão do sinal exibido: quando ambos realizado e orçado são
-            # negativos (linhas de custo/despesa), o delta_pct matemático é negativo
-            # quando a despesa cresceu — mas deve exibir "+" pois aumentou.
-            row[(produto, "_ambos_neg")] = (
+            # Flag _ambos_neg: quando ambos realizado e orçado são negativos (despesas),
+            # o delta_pct matemático é negativo quando a despesa cresceu.
+            # Invertemos o sinal exibido para "+4,0%" e a cor acompanha o sinal exibido.
+            ambos_neg = (
                 not racio_eficiencia
                 and not linha_percentual
                 and pd.notna(realizado) and pd.notna(orcado)
                 and realizado < 0 and orcado < 0
             )
+            row[(produto, "_ambos_neg")] = ambos_neg
+
+            # Cor = sinal do valor EXIBIDO (igual ao Excel: positivo=verde, negativo=vermelho)
+            # Exceções: Rácio de Eficiência sempre verde; sem dado = não pinta.
+            if pd.isna(realizado) or pd.isna(orcado) or pd.isna(delta_pct):
+                delta_bad = False
+            elif racio_eficiencia:
+                delta_bad = False
+            else:
+                valor_exibido = -float(delta_pct) if ambos_neg else float(delta_pct)
+                delta_bad = valor_exibido < 0
+
+            row[(produto, "_delta_bad")] = delta_bad
 
             if produto == "Total":
                 # Δ R$ não se aplica a indicadores percentuais.
