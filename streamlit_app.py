@@ -1923,6 +1923,15 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
                 delta_bad = realizado < orcado
 
             row[(produto, "_delta_bad")] = delta_bad
+            # Flag para inversão do sinal exibido: quando ambos realizado e orçado são
+            # negativos (linhas de custo/despesa), o delta_pct matemático é negativo
+            # quando a despesa cresceu — mas deve exibir "+" pois aumentou.
+            row[(produto, "_ambos_neg")] = (
+                not racio_eficiencia
+                and not linha_percentual
+                and pd.notna(realizado) and pd.notna(orcado)
+                and realizado < 0 and orcado < 0
+            )
 
             if produto == "Total":
                 # Δ R$ não se aplica a indicadores percentuais.
@@ -1974,9 +1983,11 @@ def tabela_html_pnl_matriz(df_matrix, produtos, metricas_por_produto):
 
         tr_class = f' class="{classe}"' if classe else ""
         html.append(f"<tr{tr_class}>")
-        html.append(f"<td>{linha}</td>")
+        linha_display = linha.replace("*", "").strip()
+        html.append(f"<td>{linha_display}</td>")
 
         linha_percentual = linha_pnl_percentual(linha)
+
         # Linhas onde a variação (Δ %, Δ R$) não faz sentido — são apresentadas
         # apenas como Realizado vs Orçado, sem coluna de variação.
         ocultar_variacao = linha_norm == normalizar_texto("Alíquota de IR/CSLL")
@@ -1992,22 +2003,28 @@ def tabela_html_pnl_matriz(df_matrix, produtos, metricas_por_produto):
                     if ocultar_variacao:
                         texto = ""
                     elif eh_racio_eficiencia:
-                        # Rácio: mostra com sinal +/-. Verde se positivo (Realizado < Orçado),
-                        # vermelho se negativo (Realizado > Orçado = pior).
                         texto = formatar_pontos_percentuais(valor)
                         if pd.notna(valor):
                             classes.append("delta-positive" if valor >= 0 else "delta-negative")
                     else:
-                        texto = formatar_pontos_percentuais(valor) if linha_percentual else formatar_percentual(valor)
                         if pd.notna(valor):
+                            ambos_neg = row[(produto, "_ambos_neg")]
+                            valor_exibir = -valor if ambos_neg else valor
+                            texto = formatar_pontos_percentuais(valor_exibir) if linha_percentual else formatar_percentual(valor_exibir)
                             classes.append("delta-negative" if row[(produto, "_delta_bad")] else "delta-positive")
+                        else:
+                            texto = formatar_pontos_percentuais(valor) if linha_percentual else formatar_percentual(valor)
                 elif metrica == "Δ R$":
                     if ocultar_variacao:
                         texto = ""
                     else:
-                        texto = "" if linha_percentual else formatar_numero(valor)
-                        if (not linha_percentual) and pd.notna(valor):
+                        if pd.notna(valor) and not linha_percentual:
+                            ambos_neg = row[(produto, "_ambos_neg")]
+                            valor_exibir = -valor if ambos_neg else valor
+                            texto = formatar_numero(valor_exibir)
                             classes.append("delta-negative" if row[(produto, "_delta_bad")] else "delta-positive")
+                        else:
+                            texto = "" if linha_percentual else formatar_numero(valor)
                 elif linha_percentual and metrica in ["Realizado", "Orçado"]:
                     texto = formatar_percentual_valor(valor)
                     if pd.notna(valor) and valor < 0:
