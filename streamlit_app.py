@@ -620,10 +620,12 @@ def classe_variacao(valor):
     return "delta-neutral"
 
 
-def card(titulo, valor, ajuda="", variacao=None, variacao_label="Δ mês anterior"):
+def card(titulo, valor, ajuda="", variacao=None, variacao_label="Δ mês anterior", cor_classe=None, variacao_exibir=None):
     delta_html = ""
     if variacao is not None:
-        delta_html = f'<div class="kpi-delta {classe_variacao(variacao)}">{formatar_variacao(variacao, variacao_label)}</div>'
+        cls = cor_classe if cor_classe is not None else classe_variacao(variacao)
+        val_txt = variacao_exibir if variacao_exibir is not None else variacao
+        delta_html = f'<div class="kpi-delta {cls}">{formatar_variacao(val_txt, variacao_label)}</div>'
 
     ajuda_html = f'<div class="kpi-help">{ajuda}</div>' if ajuda else ""
 
@@ -3218,13 +3220,13 @@ with tab_comp_2025:
                         valor_2026 = linha_df["2026"].iloc[0]
                         variacao = linha_df["Δ %"].iloc[0]
                         ajuda = f"1T26: {formatar_moeda(valor_2026)} | 1T25: {formatar_moeda(valor_2025)}"
-                        card(
-                            titulo,
-                            valor_2026,
-                            ajuda=ajuda,
-                            variacao=variacao,
-                            variacao_label="Δ 1T26 vs 1T25",
-                        )
+                        cor_classe = None
+                        variacao_exibir = None
+                        if variacao is not None and not pd.isna(variacao) and pd.notna(valor_2026) and float(valor_2026) < 0 and float(variacao) < 0:
+                            variacao_exibir = -variacao
+                            cor_classe = "delta-negative"
+                        card(titulo, valor_2026, ajuda=ajuda, variacao=variacao,
+                             variacao_label="Δ 1T26 vs 1T25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
 
             st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
 
@@ -3243,13 +3245,13 @@ with tab_comp_2025:
                         valor_2026 = linha_df["2026"].iloc[0]
                         variacao = linha_df["Δ %"].iloc[0]
                         ajuda = f"1T26: {formatar_moeda(valor_2026)} | 1T25: {formatar_moeda(valor_2025)}"
-                        card(
-                            titulo,
-                            valor_2026,
-                            ajuda=ajuda,
-                            variacao=variacao,
-                            variacao_label="Δ 1T26 vs 1T25",
-                        )
+                        cor_classe = None
+                        variacao_exibir = None
+                        if variacao is not None and not pd.isna(variacao) and pd.notna(valor_2026) and float(valor_2026) < 0 and float(variacao) < 0:
+                            variacao_exibir = -variacao
+                            cor_classe = "delta-negative"
+                        card(titulo, valor_2026, ajuda=ajuda, variacao=variacao,
+                             variacao_label="Δ 1T26 vs 1T25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
 
             st.markdown('<div class="section-title">Quanto do Resultado Contábil acumulado de 2025 já foi alcançado</div>', unsafe_allow_html=True)
             linha_resultado = obter_linha_comparativo(df_comp_principais, "RESULTADO CONTÁBIL")
