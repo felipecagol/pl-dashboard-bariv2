@@ -2836,7 +2836,7 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
         go.Indicator(
             mode="gauge+number",
             value=alcance_pct,
-            number={"suffix": "%", "font": {"size": 48, "color": "#ffffff", "family": "Arial Black"}},
+            number={"suffix": "%", "font": {"size": 64, "color": "#ffffff", "family": "Arial Black"}},
             title={"text": "<b>Resultado Contábil 1T26 x acumulado de 2025</b>", "font": {"size": 22, "color": "#ffffff"}},
             gauge={
                 "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#ffffff", "size": 14}},
