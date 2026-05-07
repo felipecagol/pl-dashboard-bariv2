@@ -3142,12 +3142,26 @@ with tab_resultados:
     tabela = filtrar_tabela_resultado_por_empresa(tabela, empresa_sel_result)
     tabela, coluna_delta = adicionar_coluna_variacao_tabela(tabela, periodos_disponiveis, periodo_sel)
 
+    # Adiciona coluna Acumulado = soma de todos os períodos (colunas de datas)
+    colunas_periodo = [c for c in tabela.columns if c not in ["Linha", coluna_delta]]
+    tabela["Acumulado"] = tabela[colunas_periodo].apply(
+        lambda row: pd.to_numeric(row, errors="coerce").sum(), axis=1
+    )
+
+    # Separa linha de total, ordena o resto por Acumulado desc
+    is_total = tabela["Linha"].str.lower().str.contains("resultado total", na=False)
+    tabela_corpo = tabela[~is_total].sort_values("Acumulado", ascending=False)
+    tabela_total = tabela[is_total]
+    tabela = pd.concat([tabela_corpo, tabela_total], ignore_index=True)
+
     tabela_valores = tabela.copy()
     tabela_formatada = tabela.copy()
 
     for col in tabela_formatada.columns:
         if col == coluna_delta:
             tabela_formatada[col] = tabela_formatada[col].map(formatar_percentual)
+        elif col == "Acumulado":
+            tabela_formatada[col] = tabela_formatada[col].map(formatar_numero)
         elif col != "Linha":
             tabela_formatada[col] = tabela_formatada[col].map(formatar_numero)
 
