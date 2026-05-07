@@ -1531,20 +1531,39 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         meses_fim_trimestre = {3, 6, 9, 12}
         periodos_pnl = [p for p in periodos_pnl if p["Data"] is not None and p["Data"].month in meses_fim_trimestre]
         if not periodos_pnl:
-            periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)  # fallback
+            periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)
 
-    lista_periodos_pnl = [item["Período"] for item in periodos_pnl]
+        # Mapeia período original → label trimestral (ex: "mar/2026" → "1T - 2026")
+        mes_para_trimestre = {3: "1T", 6: "2T", 9: "3T", 12: "4T"}
+        label_para_periodo = {}
+        lista_labels_trimestre = []
+        for p in periodos_pnl:
+            if p["Data"] is not None:
+                tri = mes_para_trimestre.get(p["Data"].month, p["Período"])
+                ano = p["Data"].year
+                label = f"{tri} - {ano}"
+            else:
+                label = p["Período"]
+            label_para_periodo[label] = p["Período"]
+            lista_labels_trimestre.append(label)
+
+        lista_periodos_pnl = lista_labels_trimestre
+    else:
+        lista_periodos_pnl = [item["Período"] for item in periodos_pnl]
+        label_para_periodo = None
 
     st.markdown('<div class="section-title">Filtros</div>', unsafe_allow_html=True)
     col_data, col_produto, col_espaco = st.columns([1, 1, 2.5])
 
     with col_data:
-        data_sel_pnl = st.selectbox(
+        label_sel = st.selectbox(
             "Data base",
             lista_periodos_pnl,
             index=len(lista_periodos_pnl) - 1,
             key=f"data_pnl_{pagina.lower()}",
         )
+        # Converte label trimestral de volta para o período original usado nos filtros
+        data_sel_pnl = label_para_periodo[label_sel] if label_para_periodo and label_sel in label_para_periodo else label_sel
 
     empresa_sel_pnl = "Todos"
     opcoes_produto = ["Consignado", "Imobiliário", "Total"]
