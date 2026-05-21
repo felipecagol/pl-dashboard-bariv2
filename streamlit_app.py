@@ -906,6 +906,7 @@ def carregar_pnl_mensal(arquivo):
 
 @st.cache_data(show_spinner=False)
 def carregar_pnl_acumulado_oficial_completo(arquivo):
+    """Carrega integralmente e de forma direta os valores oficiais da aba 'P&L Acumulado'."""
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
     except Exception:
@@ -1028,7 +1029,7 @@ def obter_linhas_tabela_pnl(df_pnl):
     )
 
     ocultas = linhas_ocultas_pnl()
-    linhas = lines[~linhas["Linha_Normalizada"].isin(ocultas)]
+    linhas = linhas[~linhas["Linha_Normalizada"].isin(ocultas)]
 
     return linhas["Linha"].tolist()
 
@@ -1861,7 +1862,6 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
         racio_eficiencia = linha_norm_card == normalizar_texto("Rácio de Eficiência")
 
         for produto in produtos:
-            realizado = valor_pnl(df_pnl, produto, inline=linha) # adjusted standard tracking lookup safely
             realizado = valor_pnl(df_pnl, produto, linha, "Realizado")
             orcado = valor_pnl(df_pnl, produto, linha, "Orçado")
 
@@ -2571,7 +2571,7 @@ def tabela_html_comparativo(df):
     return "".join(html)
 
 
-def obtener_linha_comparativo(df_comp_principais, linha_ref):
+def obter_linha_comparativo(df_comp_principais, linha_ref):
     linha_norm = normalizar_texto(linha_ref)
     return df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).eq(linha_norm)]
 
