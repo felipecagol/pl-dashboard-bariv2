@@ -2476,16 +2476,47 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         if linha_norm == normalizar_texto("DESPESAS TOTAIS"):
             v26, v25, v25_acum = somar_componentes_desp(df_comp, 2026, df_2025_acumulado)
         else:
-            b25 = df_comp[(df_comp["Ano"] == 2025) & (df_comp["Produto"] == "Total") & (df_comp["Linha_Normalizada"] == linha_norm)]
-            b26 = df_comp[(df_comp["Ano"] == 2026) & (df_comp["Produto"] == "Total") & (df_comp["Linha_Normalizada"] == linha_norm)]
-            b25_acum = (
-                df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"] == linha_norm]
-                if not df_2025_acumulado.empty and "Linha_Normalizada" in df_2025_acumulado.columns
-                else pd.DataFrame()
-            )
-            v25 = b25["Realizado"].iloc[0] if not b25.empty else pd.NA
-            v26 = b26["Realizado"].iloc[0] if not b26.empty else pd.NA
-            v25_acum = b25_acum["Realizado"].iloc[0] if not b25_acum.empty else pd.NA
+            b25 = df_comp[(df_comp["Ano"] == 2025) & (df_comp["Produto"] == "Total")]
+            b26 = df_comp[(df_comp["Ano"] == 2026) & (df_comp["Produto"] == "Total")]
+            
+            def get_val(df_subset, l_norm):
+                r = df_subset[df_subset["Linha_Normalizada"] == l_norm]
+                if not r.empty and pd.notna(r["Realizado"].iloc[0]): return r["Realizado"].iloc[0]
+                if "carteira" in l_norm:
+                    r = df_subset[df_subset["Linha_Normalizada"].str.contains("carteira de credito", na=False)]
+                    if not r.empty:
+                        for val in r["Realizado"]:
+                            if pd.notna(val): return val
+                if "pl medio" in l_norm:
+                    r = df_subset[df_subset["Linha_Normalizada"].str.contains("pl medio", na=False)]
+                    if not r.empty:
+                        for val in r["Realizado"]:
+                            if pd.notna(val): return val
+                return pd.NA
+
+            v25 = get_val(b25, linha_norm)
+            v26 = get_val(b26, linha_norm)
+
+            v25_acum = pd.NA
+            if not df_2025_acumulado.empty and "Linha_Normalizada" in df_2025_acumulado.columns:
+                b_acum = df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"] == linha_norm]
+                if not b_acum.empty and pd.notna(b_acum["Realizado"].iloc[0]): 
+                    v25_acum = b_acum["Realizado"].iloc[0]
+                else:
+                    if "carteira" in linha_norm:
+                        b_acum = df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"].str.contains("carteira de credito", na=False)]
+                        if not b_acum.empty: 
+                            for val in b_acum["Realizado"]:
+                                if pd.notna(val): 
+                                    v25_acum = val
+                                    break
+                    elif "pl medio" in linha_norm:
+                        b_acum = df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"].str.contains("pl medio", na=False)]
+                        if not b_acum.empty:
+                            for val in b_acum["Realizado"]:
+                                if pd.notna(val):
+                                    v25_acum = val
+                                    break
 
         delta_rs = v26 - v25 if pd.notna(v25) and pd.notna(v26) else pd.NA
         delta_pct = delta_rs / abs(v25) if pd.notna(delta_rs) and v25 not in [0, 0.0] and pd.notna(v25) else pd.NA
@@ -2576,7 +2607,14 @@ def tabela_html_comparativo(df):
 
 def obter_linha_comparativo(df_comp_principais, linha_ref):
     linha_norm = normalizar_texto(linha_ref)
-    return df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).eq(linha_norm)]
+    res = df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).eq(linha_norm)]
+    if not res.empty:
+        return res
+    if "carteira" in linha_norm:
+        res = df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).str.contains("carteira", na=False)]
+    if res.empty and "pl medio" in linha_norm:
+        res = df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).str.contains("pl medio", na=False)]
+    return res
 
 
 def grafico_alcance_vs_orcado(valor_acumulado, valor_orcado):
@@ -3048,11 +3086,6 @@ with tab_comp_2025:
             for col, (titulo, linha_nome) in zip(cols2, novos_cards_linha2):
                 with col:
                     linha_df = obter_linha_comparativo(df_comp_principais, linha_nome)
-                    
-                    if linha_df.empty and "Carteira" in titulo:
-                        linha_df = obter_linha_comparativo(df_comp_principais, "Carteira de Crédito Média")
-                    if linha_df.empty and "PL" in titulo:
-                        linha_df = obter_linha_comparativo(df_comp_principais, "PL Médio (Banco + Hipo)")
                         
                     if linha_df.empty:
                         card(titulo, 0, ajuda="Sem dados na base", variacao=None)
