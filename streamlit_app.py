@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-ARQUIVO_PADRAO = "2026_03_PL_com_BASE_DASH_v2.xlsx"
+ARQUIVO_PADRAO = "BASE_DASHBOARD_PL_2026.xlsx"
 ABA_RESULTADO = "RESULTADO"
 ABA_BASE = "BASE_DASH"
 DATA_MINIMA_DASH = pd.Timestamp(2026, 1, 1)
