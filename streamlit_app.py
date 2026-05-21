@@ -1214,10 +1214,10 @@ def linhas_media_pnl():
     }
 
 
-def buscar_linha_acumulada(df_acumulado, produto, inline_norm_alvo, metrica="Realizado"):
+def buscar_linha_acumulada(df_acumulado, produto, linha_norm_alvo, metrica="Realizado"):
     base = df_acumulado[
         (df_acumulado["Produto"] == produto)
-        & (df_acumulado["Linha_Normalizada"] == inline_norm_alvo)
+        & (df_acumulado["Linha_Normalizada"] == linha_norm_alvo)
         & (df_acumulado["Métrica"] == metrica)
     ]
     if base.empty:
@@ -1391,7 +1391,7 @@ def agregar_pnl_acumulado(df_pnl_periodo):
         realizado = row.get("Realizado")
         orcado = row.get("Orçado")
         linha_norm = row["Linha_Normalizada"]
-        eh_percentual = inline_norm = linha_norm in linhas_percentuais
+        eh_percentual = linha_norm in linhas_percentuais
 
         if pd.isna(realizado) or pd.isna(orcado):
             delta_rs = pd.NA
@@ -1855,7 +1855,7 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
     linhas = []
 
     for linha in linhas_principais:
-        row = {"Linha": inline_ref_label := linha} # simple tracking anchor trace
+        row = {"Linha": linha}
         linha_percentual = linha_pnl_percentual(linha)
         linha_norm_card = normalizar_texto(linha)
 
@@ -1949,7 +1949,7 @@ def tabela_html_pnl_matriz(df_matrix, produtos, metricas_por_produto):
         linha_display = linha.replace("*", "").strip()
         html.append(f"<td>{linha_display}</td>")
 
-        linha_percentual = inline_pct_check = linha_pnl_percentual(linha)
+        linha_percentual = linha_pnl_percentual(linha)
         ocultar_variacao = linha_norm == normalizar_texto("Alíquota de IR/CSLL")
         eh_racio_eficiencia = linha_norm == normalizar_texto("Rácio de Eficiência")
 
@@ -2224,7 +2224,7 @@ def card_composicao_resultado_total_acumulado(df_pnl_completo, periodo_atual, em
 
 
 def filtrar_tabela_resultado_por_empresa(tabela, empresa_sel):
-    if empresa_sel == "Todos" or table_check := tabela.empty: # standard variable tracking logic check
+    if empresa_sel == "Todos" or tabela.empty:
         return tabela
 
     col_nome = tabela.columns[0]
@@ -2410,7 +2410,6 @@ def carregar_2025_acumulado(arquivo):
 
 
 def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
-    # === ADICIONADAS LINHAS DE MÉDIAS AO MAPEAMENTO DE COMPARAÇÃO ===
     linhas_ordem = [
         "RECEITAS",
         "Operações de Crédito",
@@ -3012,8 +3011,6 @@ with tab_comp_2025:
         else:
             st.markdown('<div class="section-title">Comparativo 1Q26 x 1Q25</div>', unsafe_allow_html=True)
 
-            # === NOVA CONFIGURAÇÃO DE CARDSTrimestrais SOLICITADOS ===
-            # Linha 1: 4 colunas para as primeiras linhas solicitadas
             novos_cards_linha1 = [
                 ("Margem de Intermediação 1Q26", "MARGEM INTERMEDIAÇÃO"),
                 ("MG Intermediação Líq. 1Q26", "MG INTERMEDIAÇÃO LIQ"),
@@ -3042,7 +3039,6 @@ with tab_comp_2025:
 
             st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
 
-            # Linha 2: 3 colunas para as linhas finais de resultados e médias
             novos_cards_linha2 = [
                 ("Resultado Contábil 1Q26", "RESULTADO CONTÁBIL"),
                 ("Carteira de Crédito (Média do Trimestre) 1Q26", "Carteira de Crédito Bruta Média"),
@@ -3054,7 +3050,6 @@ with tab_comp_2025:
                 with col:
                     linha_df = obter_linha_comparativo(df_comp_principais, linha_nome)
                     
-                    # Buscas alternativas inteligentes em caso de variações estruturais sutis da planilha
                     if linha_df.empty and "Carteira" in titulo:
                         linha_df = obter_linha_comparativo(df_comp_principais, "Carteira de Crédito Média")
                     if linha_df.empty and "PL" in titulo:
@@ -3064,7 +3059,7 @@ with tab_comp_2025:
                         card(titulo, 0, ajuda="Sem dados na base", variacao=None)
                     else:
                         valor_2025 = linha_df["2025"].iloc[0]
-                        valor_2026 = inline_v26 := linha_df["2026"].iloc[0]
+                        valor_2026 = linha_df["2026"].iloc[0]
                         variacao = linha_df["Δ %"].iloc[0]
                         ajuda = f"1Q26: {formatar_moeda(valor_2026)} | 1Q25: {formatar_moeda(valor_2025)}"
                         cor_classe = None
