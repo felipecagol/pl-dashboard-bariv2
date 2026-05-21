@@ -1517,7 +1517,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         if not periodos_pnl:
             periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)
 
-        mes_para_trimestre = {3: "1T", 6: "2T", 9: "3T", 12: "4T"}
+        mes_para_trimestre = {3: "1Q", 6: "2Q", 9: "3Q", 12: "4Q"}
         label_para_periodo = {}
         lista_labels_trimestre = []
         for p in periodos_pnl:
@@ -1717,7 +1717,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
                     var = None
             else:
                 var = None
-            label_var = "vs 1º Quad 25"
+            label_var = "vs 1Q25"
         else:
             var = variacao_pnl_mes_anterior(df_pnl_completo, row["Produto"], linha_resultado_contabil, data_sel_pnl)
             label_var = "vs mês ant."
@@ -2501,6 +2501,7 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
                 "Linha": linha_ref,
                 "2025": v25,
                 "2026": v26,
+                "2026 Acumulado": v26,
                 "2025 Acumulado": v25_acum,
                 "Δ R$": delta_rs,
                 "Δ %": delta_pct,
@@ -2526,12 +2527,12 @@ def formatar_percentual_simples(valor):
 
 def tabela_html_comparativo(df):
     html = ['<div class="table-wrap"><table class="dash-table">']
-    # Removido "2026 Acumulado" que estava sobrando
-    cols = ["Linha", "2025", "2026", "Δ R$", "Δ %", "2025 Acumulado", "Alcance 2025"]
+    cols = ["Linha", "2025", "2026", "2026 Acumulado", "Δ R$", "Δ %", "2025 Acumulado", "Alcance 2025"]
     titulos = {
         "Linha": "Linha",
-        "2025": "1º Quadrimestre 2025",
-        "2026": "1º Quadrimestre 2026",
+        "2025": "1Q25",
+        "2026": "1Q26",
+        "2026 Acumulado": "2026 Acumulado",
         "Δ R$": "Δ R$",
         "Δ %": "Δ %",
         "2025 Acumulado": "2025 Acumulado",
@@ -2548,7 +2549,7 @@ def tabela_html_comparativo(df):
         for col in cols:
             valor = row[col]
             classes = []
-            if col in ["2025", "2026", "Δ R$", "2025 Acumulado"]:
+            if col in ["2025", "2026", "2026 Acumulado", "Δ R$", "2025 Acumulado"]:
                 texto = formatar_numero(valor)
                 if pd.notna(valor) and valor < 0:
                     classes.append("neg-value")
@@ -2650,7 +2651,7 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
             mode="gauge+number",
             value=alcance_pct,
             number={"suffix": "%", "font": {"size": 64, "color": "#ffffff", "family": "Arial Black"}},
-            title={"text": "<b>Resultado Contábil 1º Quad 26 x acumulado de 2025</b>", "font": {"size": 22, "color": "#ffffff"}},
+            title={"text": "<b>Resultado Contábil 1Q26 x acumulado de 2025</b>", "font": {"size": 22, "color": "#ffffff"}},
             gauge={
                 "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#ffffff", "size": 14}},
                 "bar": {"color": cor_barra, "thickness": 0.38},
@@ -2677,7 +2678,7 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
         showarrow=False,
         align="center",
         text=(
-            f"<b>Realizado no 1º Quad 26:</b> {formatar_moeda(realizado)}<br>"
+            f"<b>Realizado no 1Q26:</b> {formatar_moeda(realizado)}<br>"
             f"<b>Acumulado de 2025:</b> {formatar_moeda(base)}<br>"
             f"{texto_status}"
         ),
@@ -3005,12 +3006,12 @@ with tab_comp_2025:
         if df_comp.empty or df_comp_principais.empty:
             st.info("Não encontrei dados suficientes na aba Comparativo 2026 x 2025.")
         else:
-            st.markdown('<div class="section-title">Comparativo 1º Quad 26 x 1º Quad 25</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">Comparativo 1Q26 x 1Q25</div>', unsafe_allow_html=True)
 
             cards_comp = [
-                ("Resultado Contábil 1º Quad 26", "RESULTADO CONTÁBIL"),
-                ("Margem de Intermediação 1º Quad 26", "MARGEM INTERMEDIAÇÃO"),
-                ("Margem de Intermediação Líq. 1º Quad 26", "MG INTERMEDIAÇÃO LIQ"),
+                ("Resultado Contábil 1Q26", "RESULTADO CONTÁBIL"),
+                ("Margem de Intermediação 1Q26", "MARGEM INTERMEDIAÇÃO"),
+                ("Margem de Intermediação Líq. 1Q26", "MG INTERMEDIAÇÃO LIQ"),
             ]
             cols = st.columns(3)
             for col, (titulo, linha_nome) in zip(cols, cards_comp):
@@ -3022,20 +3023,20 @@ with tab_comp_2025:
                         valor_2025 = linha_df["2025"].iloc[0]
                         valor_2026 = linha_df["2026"].iloc[0]
                         variacao = linha_df["Δ %"].iloc[0]
-                        ajuda = f"1º Quad 26: {formatar_moeda(valor_2026)} | 1º Quad 25: {formatar_moeda(valor_2025)}"
+                        ajuda = f"1Q26: {formatar_moeda(valor_2026)} | 1Q25: {formatar_moeda(valor_2025)}"
                         cor_classe = None
                         variacao_exibir = None
                         if variacao is not None and not pd.isna(variacao) and pd.notna(valor_2026) and float(valor_2026) < 0 and float(variacao) < 0:
                             variacao_exibir = -variacao
                             cor_classe = "delta-negative"
                         card(titulo, valor_2026, ajuda=ajuda, variacao=variacao,
-                             variacao_label="Δ 1º Quad 26 vs 1º Quad 25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
+                             variacao_label="Δ 1Q26 vs 1Q25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
 
             st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
 
             cards_comp2 = [
-                ("Despesas Totais 1º Quad 26", "DESPESAS TOTAIS"),
-                ("Provisões 1º Quad 26", "Provisões"),
+                ("Despesas Totais 1Q26", "DESPESAS TOTAIS"),
+                ("Provisões 1Q26", "Provisões"),
             ]
             cols2 = st.columns(3)
             for col, (titulo, linha_nome) in zip(cols2, cards_comp2):
@@ -3047,14 +3048,14 @@ with tab_comp_2025:
                         valor_2025 = linha_df["2025"].iloc[0]
                         valor_2026 = linha_df["2026"].iloc[0]
                         variacao = linha_df["Δ %"].iloc[0]
-                        ajuda = f"1º Quad 26: {formatar_moeda(valor_2026)} | 1º Quad 25: {formatar_moeda(valor_2025)}"
+                        ajuda = f"1Q26: {formatar_moeda(valor_2026)} | 1Q25: {formatar_moeda(valor_2025)}"
                         cor_classe = None
                         variacao_exibir = None
                         if variacao is not None and not pd.isna(variacao) and pd.notna(valor_2026) and float(valor_2026) < 0 and float(variacao) < 0:
                             variacao_exibir = -variacao
                             cor_classe = "delta-negative"
                         card(titulo, valor_2026, ajuda=ajuda, variacao=variacao,
-                             variacao_label="Δ 1º Quad 26 vs 1º Quad 25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
+                             variacao_label="Δ 1Q26 vs 1Q25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
 
             st.markdown('<div class="section-title">Quanto do Resultado Contábil acumulado de 2025 já foi alcançado</div>', unsafe_allow_html=True)
             linha_resultado = obter_linha_comparativo(df_comp_principais, "RESULTADO CONTÁBIL")
@@ -3069,7 +3070,7 @@ with tab_comp_2025:
                 else:
                     st.info("Não foi possível calcular o alcance do Resultado Contábil com a base atual.")
 
-            st.markdown('<div class="section-title">1º Quad 25 x 1º Quad 26 por linha principal</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">1Q25 x 1Q26 por linha principal</div>', unsafe_allow_html=True)
             base_long = df_comp_principais.melt(
                 id_vars=["Linha", "Ordem"],
                 value_vars=["2025", "2026"],
