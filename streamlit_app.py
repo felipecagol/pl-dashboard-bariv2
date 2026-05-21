@@ -906,7 +906,6 @@ def carregar_pnl_mensal(arquivo):
 
 @st.cache_data(show_spinner=False)
 def carregar_pnl_acumulado_oficial_completo(arquivo):
-    """Carrega integralmente e de forma direta os valores oficiais da aba 'P&L Acumulado'."""
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
     except Exception:
@@ -2296,9 +2295,11 @@ def carregar_comparativo_2025(arquivo):
 
     if not label_cols:
         label_cols = [1, 15]
+    elif len(label_cols) == 1:
+        label_cols.append(label_cols[0] + 14)
 
     col_26 = label_cols[0]
-    col_25 = label_cols[1] if len(label_cols) > 1 else None
+    col_25 = label_cols[1]
 
     def extrair_bloco(label_col, ano):
         registros_bloco = []
@@ -2421,10 +2422,8 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         "MG CONTRIBUIÇÃO DIRETA",
         "RESULTADO ANTES IMPOSTO",
         "RESULTADO CONTÁBIL",
-        "Carteira de Crédito Bruta Média",
         "Carteira de Crédito Média",
         "PL Médio",
-        "PL Médio (Banco + Hipo)",
     ]
 
     componentes_desp_totais = [
@@ -3041,7 +3040,7 @@ with tab_comp_2025:
 
             novos_cards_linha2 = [
                 ("Resultado Contábil 1Q26", "RESULTADO CONTÁBIL"),
-                ("Carteira de Crédito (Média do Trimestre) 1Q26", "Carteira de Crédito Bruta Média"),
+                ("Carteira de Crédito (Média) 1Q26", "Carteira de Crédito Média"),
                 ("PL Médio 1Q26", "PL Médio"),
             ]
             
