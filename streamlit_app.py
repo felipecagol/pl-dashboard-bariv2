@@ -906,6 +906,7 @@ def carregar_pnl_mensal(arquivo):
 
 @st.cache_data(show_spinner=False)
 def carregar_pnl_acumulado_oficial_completo(arquivo):
+    """Carrega integralmente e de forma direta os valores oficiais da aba 'P&L Acumulado'."""
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
     except Exception:
@@ -1716,7 +1717,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
                     var = None
             else:
                 var = None
-            label_var = "vs 1T2025"
+            label_var = "vs 1º Quad 25"
         else:
             var = variacao_pnl_mes_anterior(df_pnl_completo, row["Produto"], linha_resultado_contabil, data_sel_pnl)
             label_var = "vs mês ant."
@@ -2284,19 +2285,16 @@ def carregar_comparativo_2025(arquivo):
     except Exception:
         bruto = pd.read_excel(arquivo, sheet_name="Comparativo 2025", header=None, engine="openpyxl")
 
-    # Localiza dinamicamente as colunas de rótulos para se adaptar caso a planilha sofra offset (espaços em branco)
     label_cols = []
     for col in bruto.columns:
         for r in range(min(50, len(bruto))):
             val = normalizar_texto(bruto.iat[r, col])
-            # Palavras âncora que definem que essa coluna é a de texto/títulos
             if val in ["receitas", "resultado contabil", "resultado contábil", "despesas totais"]:
                 if col not in label_cols:
                     label_cols.append(col)
                 break
 
     if not label_cols:
-        # Fallback de segurança para o mapeamento original caso a leitura dinâmica falhe
         label_cols = [1, 15]
 
     col_26 = label_cols[0]
@@ -2307,7 +2305,6 @@ def carregar_comparativo_2025(arquivo):
         if label_col is None or label_col >= len(bruto.columns):
             return registros_bloco
 
-        # A distância (offset) entre a coluna de texto e as colunas de dados é imutável
         blocos = [
             {"Produto": "Consignado",  "realizado_col": label_col + 4,  "orcado_col": label_col + 5},
             {"Produto": "Imobiliário", "realizado_col": label_col + 7,  "orcado_col": label_col + 8},
@@ -2504,7 +2501,6 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
                 "Linha": linha_ref,
                 "2025": v25,
                 "2026": v26,
-                "2026 Acumulado": v26,
                 "2025 Acumulado": v25_acum,
                 "Δ R$": delta_rs,
                 "Δ %": delta_pct,
@@ -2530,12 +2526,12 @@ def formatar_percentual_simples(valor):
 
 def tabela_html_comparativo(df):
     html = ['<div class="table-wrap"><table class="dash-table">']
-    cols = ["Linha", "2025", "2026", "2026 Acumulado", "Δ R$", "Δ %", "2025 Acumulado", "Alcance 2025"]
+    # Removido "2026 Acumulado" que estava sobrando
+    cols = ["Linha", "2025", "2026", "Δ R$", "Δ %", "2025 Acumulado", "Alcance 2025"]
     titulos = {
         "Linha": "Linha",
-        "2025": "1T2025",
-        "2026": "1T2026",
-        "2026 Acumulado": "2026 Acumulado",
+        "2025": "1º Quadrimestre 2025",
+        "2026": "1º Quadrimestre 2026",
         "Δ R$": "Δ R$",
         "Δ %": "Δ %",
         "2025 Acumulado": "2025 Acumulado",
@@ -2552,7 +2548,7 @@ def tabela_html_comparativo(df):
         for col in cols:
             valor = row[col]
             classes = []
-            if col in ["2025", "2026", "2026 Acumulado", "Δ R$", "2025 Acumulado"]:
+            if col in ["2025", "2026", "Δ R$", "2025 Acumulado"]:
                 texto = formatar_numero(valor)
                 if pd.notna(valor) and valor < 0:
                     classes.append("neg-value")
@@ -2654,7 +2650,7 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
             mode="gauge+number",
             value=alcance_pct,
             number={"suffix": "%", "font": {"size": 64, "color": "#ffffff", "family": "Arial Black"}},
-            title={"text": "<b>Resultado Contábil 1T26 x acumulado de 2025</b>", "font": {"size": 22, "color": "#ffffff"}},
+            title={"text": "<b>Resultado Contábil 1º Quad 26 x acumulado de 2025</b>", "font": {"size": 22, "color": "#ffffff"}},
             gauge={
                 "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#ffffff", "size": 14}},
                 "bar": {"color": cor_barra, "thickness": 0.38},
@@ -2681,7 +2677,7 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
         showarrow=False,
         align="center",
         text=(
-            f"<b>Realizado no 1T26:</b> {formatar_moeda(realizado)}<br>"
+            f"<b>Realizado no 1º Quad 26:</b> {formatar_moeda(realizado)}<br>"
             f"<b>Acumulado de 2025:</b> {formatar_moeda(base)}<br>"
             f"{texto_status}"
         ),
@@ -3009,12 +3005,12 @@ with tab_comp_2025:
         if df_comp.empty or df_comp_principais.empty:
             st.info("Não encontrei dados suficientes na aba Comparativo 2026 x 2025.")
         else:
-            st.markdown('<div class="section-title">Comparativo 1T26 x 1T25</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">Comparativo 1º Quad 26 x 1º Quad 25</div>', unsafe_allow_html=True)
 
             cards_comp = [
-                ("Resultado Contábil 1T26", "RESULTADO CONTÁBIL"),
-                ("Margem de Intermediação 1T26", "MARGEM INTERMEDIAÇÃO"),
-                ("Margem de Intermediação Líq. 1T26", "MG INTERMEDIAÇÃO LIQ"),
+                ("Resultado Contábil 1º Quad 26", "RESULTADO CONTÁBIL"),
+                ("Margem de Intermediação 1º Quad 26", "MARGEM INTERMEDIAÇÃO"),
+                ("Margem de Intermediação Líq. 1º Quad 26", "MG INTERMEDIAÇÃO LIQ"),
             ]
             cols = st.columns(3)
             for col, (titulo, linha_nome) in zip(cols, cards_comp):
@@ -3026,20 +3022,20 @@ with tab_comp_2025:
                         valor_2025 = linha_df["2025"].iloc[0]
                         valor_2026 = linha_df["2026"].iloc[0]
                         variacao = linha_df["Δ %"].iloc[0]
-                        ajuda = f"1T26: {formatar_moeda(valor_2026)} | 1T25: {formatar_moeda(valor_2025)}"
+                        ajuda = f"1º Quad 26: {formatar_moeda(valor_2026)} | 1º Quad 25: {formatar_moeda(valor_2025)}"
                         cor_classe = None
                         variacao_exibir = None
                         if variacao is not None and not pd.isna(variacao) and pd.notna(valor_2026) and float(valor_2026) < 0 and float(variacao) < 0:
                             variacao_exibir = -variacao
                             cor_classe = "delta-negative"
                         card(titulo, valor_2026, ajuda=ajuda, variacao=variacao,
-                             variacao_label="Δ 1T26 vs 1T25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
+                             variacao_label="Δ 1º Quad 26 vs 1º Quad 25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
 
             st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
 
             cards_comp2 = [
-                ("Despesas Totais 1T26", "DESPESAS TOTAIS"),
-                ("Provisões 1T26", "Provisões"),
+                ("Despesas Totais 1º Quad 26", "DESPESAS TOTAIS"),
+                ("Provisões 1º Quad 26", "Provisões"),
             ]
             cols2 = st.columns(3)
             for col, (titulo, linha_nome) in zip(cols2, cards_comp2):
@@ -3051,14 +3047,14 @@ with tab_comp_2025:
                         valor_2025 = linha_df["2025"].iloc[0]
                         valor_2026 = linha_df["2026"].iloc[0]
                         variacao = linha_df["Δ %"].iloc[0]
-                        ajuda = f"1T26: {formatar_moeda(valor_2026)} | 1T25: {formatar_moeda(valor_2025)}"
+                        ajuda = f"1º Quad 26: {formatar_moeda(valor_2026)} | 1º Quad 25: {formatar_moeda(valor_2025)}"
                         cor_classe = None
                         variacao_exibir = None
                         if variacao is not None and not pd.isna(variacao) and pd.notna(valor_2026) and float(valor_2026) < 0 and float(variacao) < 0:
                             variacao_exibir = -variacao
                             cor_classe = "delta-negative"
                         card(titulo, valor_2026, ajuda=ajuda, variacao=variacao,
-                             variacao_label="Δ 1T26 vs 1T25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
+                             variacao_label="Δ 1º Quad 26 vs 1º Quad 25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
 
             st.markdown('<div class="section-title">Quanto do Resultado Contábil acumulado de 2025 já foi alcançado</div>', unsafe_allow_html=True)
             linha_resultado = obter_linha_comparativo(df_comp_principais, "RESULTADO CONTÁBIL")
@@ -3073,7 +3069,7 @@ with tab_comp_2025:
                 else:
                     st.info("Não foi possível calcular o alcance do Resultado Contábil com a base atual.")
 
-            st.markdown('<div class="section-title">1T25 x 1T26 por linha principal</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">1º Quad 25 x 1º Quad 26 por linha principal</div>', unsafe_allow_html=True)
             base_long = df_comp_principais.melt(
                 id_vars=["Linha", "Ordem"],
                 value_vars=["2025", "2026"],
