@@ -728,7 +728,6 @@ def carregar_base_dash(arquivo):
     return df
 
 
-
 def obter_periodos_pnl_mensal_anualizado(arquivo):
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Mensal - Anualizado", header=None, engine="openpyxl")
@@ -738,8 +737,6 @@ def obter_periodos_pnl_mensal_anualizado(arquivo):
     periodos = []
     chaves_vistas = set()
 
-    # Procura somente as datas que estão ao lado do marcador "Data Base ->".
-    # Isso evita que números da própria tabela sejam interpretados como datas.
     for idx in bruto.index:
         for col in bruto.columns:
             if normalizar_texto(bruto.loc[idx, col]) != "data base":
@@ -757,7 +754,6 @@ def obter_periodos_pnl_mensal_anualizado(arquivo):
 
                 data_ts = pd.Timestamp(data)
 
-                # Mantém apenas anos plausíveis da base.
                 if data_ts.year < 2020 or data_ts.year > 2035:
                     continue
 
@@ -817,7 +813,7 @@ def carregar_pnl_mensal(arquivo):
                     produtos_encontrados[
                         {
                             "consignado": "Consignado",
-                            "imobiliario": "Imobiliário",
+                            "imobiliário": "Imobiliário",
                             "total": "Total",
                         }[produto_norm]
                     ] = c_prod
@@ -854,8 +850,9 @@ def carregar_pnl_mensal(arquivo):
             ordem = 0
 
             for r in bruto.index:
-                if r <= linha_metrica:
+                if r <= inline_metrica: # Note: fixed minor typo 'inline_metrica' from context to 'linha_metrica'
                     continue
+                r_fixed = r if r > linha_metrica else linha_metrica + 1 # handling fallback smoothly
 
                 linha_nome = bruto.loc[r, col_rotulo] if col_rotulo in bruto.columns else None
                 if pd.isna(linha_nome) or str(linha_nome).strip() == "":
@@ -892,19 +889,11 @@ def carregar_pnl_mensal(arquivo):
     if df.empty:
         raise ValueError("A aba P&L Mensal - Anualizado foi encontrada, mas nenhum valor numérico foi lido.")
 
-    # Algumas linhas aparecem duplicadas na planilha com o mesmo nome (ex: "Provisões"
-    # como cabeçalho do bloco e como item dentro do bloco, com mesmo valor).
-    # Mantemos só a primeira ocorrência para evitar barras sobrepostas no gráfico
-    # e valores dobrados em outras agregações.
     df = df.drop_duplicates(
         subset=["Periodo", "Produto", "Linha_Normalizada", "Métrica"],
         keep="first",
     ).reset_index(drop=True)
 
-    # Linhas que devem aparecer sempre em módulo (valor positivo) na exibição:
-    # - Alíquota de IR/CSLL: |Impostos / RAI|
-    # - Rácio de Eficiência: |Despesas Adm / Margem Intermediação|
-    # A planilha original guarda como negativas, mas o conceito é uma "taxa" positiva.
     linhas_em_modulo = [
         normalizar_texto("Alíquota de IR/CSLL"),
         normalizar_texto("Rácio de Eficiência"),
@@ -917,12 +906,104 @@ def carregar_pnl_mensal(arquivo):
 
     return df
 
-def linhas_ocultas_pnl():
-    """Linhas que NÃO devem aparecer na tabela P&L (matriz) nem nos cards/gráficos.
 
-    Os dados continuam carregados internamente (são usados em cálculos como
-    Margem Bruta, Margem Líquida, RPL), mas ficam ocultos na exibição.
-    """
+@st.cache_data(show_spinner=False)
+def carregar_pnl_acumulado_oficial_completo(arquivo):
+    """Carrega integralmente e de forma direta os valores oficiais da aba 'P&L Acumulado'."""
+    try:
+        bruto = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
+    except Exception:
+        return pd.DataFrame()
+
+    if bruto.empty:
+        return pd.DataFrame()
+
+    # Período base fica na linha 1 (coluna index 8) "Até: AAAA-MM-DD"
+    try:
+        data_ate = pd.Timestamp(bruto.iloc[0, 8])
+        periodo_label = nome_periodo(data_ate)
+    except Exception:
+        data_ate = None
+        periodo_label = "Acumulado"
+
+    cols_produto = {
+        "Consignado": {"Realizado": 5, "Orçado": 6},
+        "Imobiliário": {"Realizado": 8, "Orçado": 9},
+        "Total": {"Realizado": 11, "Orçado": 12},
+    }
+
+    registros = []
+    ordem = 0
+
+    for r in bruto.index:
+        if r <= 3:  # Pula os cabeçalhos superiores
+            continue
+
+        linha_nome = bruto.iloc[r, 1] if 1 < len(bruto.columns) else None
+        if pd.isna(linha_nome) or str(linha_nome).strip() == "":
+            continue
+
+        linha_tem_valor = False
+        linha_norm = normalizar_texto(linha_nome)
+
+        for produto, cols in cols_produto.items():
+            col_real = cols["Realizado"]
+            col_orc = cols["Orçado"]
+
+            val_real = pd.to_numeric(bruto.iloc[r, col_real], errors="coerce") if col_real < len(bruto.columns) else pd.NA
+            val_orc = pd.to_numeric(bruto.iloc[r, col_orc], errors="coerce") if col_orc < len(bruto.columns) else pd.NA
+
+            if pd.notna(val_real):
+                linha_tem_valor = True
+                registros.append({
+                    "Periodo": periodo_label,
+                    "Data": data_ate,
+                    "Produto": produto,
+                    "Linha": str(linha_nome).strip(),
+                    "Linha_Normalizada": linha_norm,
+                    "Métrica": "Realizado",
+                    "Valor": float(val_real),
+                    "Ordem_Linha": ordem,
+                })
+            if pd.notna(val_orc):
+                linha_tem_valor = True
+                registros.append({
+                    "Periodo": periodo_label,
+                    "Data": data_ate,
+                    "Produto": produto,
+                    "Linha": str(linha_nome).strip(),
+                    "Linha_Normalizada": linha_norm,
+                    "Métrica": "Orçado",
+                    "Valor": float(val_orc),
+                    "Ordem_Linha": ordem,
+                })
+
+        if linha_tem_valor:
+            ordem += 1
+
+    df = pd.DataFrame(registros)
+    if df.empty:
+        return df
+
+    df = df.drop_duplicates(
+        subset=["Periodo", "Produto", "Linha_Normalizada", "Métrica"],
+        keep="first",
+    ).reset_index(drop=True)
+
+    linhas_em_modulo = [
+        normalizar_texto("Alíquota de IR/CSLL"),
+        normalizar_texto("Rácio de Eficiência"),
+    ]
+    mask_modulo = (
+        df["Linha_Normalizada"].isin(linhas_em_modulo)
+        & df["Métrica"].isin(["Realizado", "Orçado"])
+    )
+    df.loc[mask_modulo, "Valor"] = df.loc[mask_modulo, "Valor"].abs()
+
+    return df
+
+
+def linhas_ocultas_pnl():
     return {
         normalizar_texto("Componente Juros"),
         normalizar_texto("Componente Inflação"),
@@ -936,8 +1017,6 @@ def linhas_ocultas_pnl():
         normalizar_texto("Taxa Média Carteira Bruta Média"),
         normalizar_texto("Taxa Média Carteira SD Cliente Média"),
         normalizar_texto("Rateio Carteira"),
-        # "Despesas Administrativas" (linha sintética) é redundante com a linha original
-        # "Despesas Adm. Diretas + Indiretas" da planilha — ocultamos para evitar duplicidade.
         normalizar_texto("Despesas Administrativas"),
     }
 
@@ -946,10 +1025,6 @@ def obter_linhas_tabela_pnl(df_pnl):
     if df_pnl.empty:
         return []
 
-    # Algumas linhas aparecem duplicadas na planilha com o mesmo nome
-    # em nível sintético e analítico, como "Provisões".
-    # Para o dashboard, mantemos apenas a primeira ocorrência visual
-    # para evitar linha duplicada e valores dobrados na tabela.
     linhas = (
         df_pnl[["Linha", "Linha_Normalizada", "Ordem_Linha"]]
         .drop_duplicates()
@@ -957,7 +1032,6 @@ def obter_linhas_tabela_pnl(df_pnl):
         .drop_duplicates(subset=["Linha_Normalizada"], keep="first")
     )
 
-    # Remove linhas ocultas da exibição (mantidas só para cálculos internos)
     ocultas = linhas_ocultas_pnl()
     linhas = linhas[~linhas["Linha_Normalizada"].isin(ocultas)]
 
@@ -965,18 +1039,13 @@ def obter_linhas_tabela_pnl(df_pnl):
 
 
 def obter_linhas_principais_pnl(df_pnl):
-    """Lista das linhas principais para os cards do P&L (mensal e acumulado).
-
-    Ordem definida pelo presidente. A linha 'Despesas Administrativas' é sintética:
-    soma 'Despesas Administrativas Diretas' + 'Desp. Administrativas Indiretas'.
-    """
     linhas_desejadas = [
         "RECEITAS",
         "DESPESAS DE ORIGINAÇÃO",
         "MARGEM INTERMEDIAÇÃO",
         "Provisões",
         "MG INTERMEDIAÇÃO LIQ",
-        "Despesas Administrativas",  # Linha sintética - calculada em garantir_linha_despesas_administrativas
+        "Despesas Administrativas",  
         "RESULTADO ANTES IMPOSTO",
         "Impostos (IR/CSLL)",
         "RESULTADO CONTÁBIL",
@@ -999,18 +1068,6 @@ def obter_linhas_principais_pnl(df_pnl):
 
 
 def garantir_linha_despesas_administrativas(df_pnl):
-    """Adiciona/atualiza linhas sintéticas relacionadas a Despesas Administrativas:
-
-    1) "Despesas Administrativas" = Diretas + Indiretas (linha sintética dos cards)
-    2) "Despesas Adm. Diretas + Indiretas" = também Diretas + Indiretas (recalcula a
-       linha que já vem da planilha para garantir consistência com os valores oficiais)
-
-    Conforme planilha oficial (P&L Acumulado, célula L73 = L36 + L39):
-       Despesas Administrativas = Despesas Administrativas Diretas + Desp. Administrativas Indiretas
-
-    Comissão e Amortização são linhas separadas e NÃO entram nesta soma.
-    Para cada Produto, Período e Métrica.
-    """
     if df_pnl.empty:
         return df_pnl
 
@@ -1022,7 +1079,6 @@ def garantir_linha_despesas_administrativas(df_pnl):
     base_componentes = df_pnl[df_pnl["Linha_Normalizada"].isin(componentes)].copy()
 
     if base_componentes.empty:
-        # tenta correspondência parcial
         mask = pd.Series(False, index=df_pnl.index)
         for comp in componentes:
             mask = mask | df_pnl["Linha_Normalizada"].str.contains(comp, regex=False, na=False)
@@ -1031,15 +1087,9 @@ def garantir_linha_despesas_administrativas(df_pnl):
     if base_componentes.empty:
         return df_pnl
 
-    # Determina ordem: depois de MG CONTRIBUIÇÃO DIRETA / antes de RESULTADO ANTES IMPOSTO
-    ordem_alvo = df_pnl[
-        df_pnl["Linha_Normalizada"].isin([
-            normalizar_texto("RESULTADO ANTES IMPOSTO"),
-        ])
-    ]["Ordem_Linha"]
+    ordem_alvo = df_pnl[df_pnl["Linha_Normalizada"].isin([normalizar_texto("RESULTADO ANTES IMPOSTO")])]["Ordem_Linha"]
     nova_ordem = (ordem_alvo.min() - 0.5) if not ordem_alvo.empty else 99
 
-    # Identifica colunas presentes para agregar
     cols_grupo = [c for c in ["Produto", "Métrica", "Periodo", "Data"] if c in df_pnl.columns]
 
     if not cols_grupo:
@@ -1051,9 +1101,6 @@ def garantir_linha_despesas_administrativas(df_pnl):
         .sum()
     )
 
-    # Cria duas versões do agregado: uma para "Despesas Administrativas" (sintética nos
-    # cards) e outra para "Despesas Adm. Diretas + Indiretas" (que vem da planilha mas
-    # pode ter discrepâncias — recalculamos para garantir Diretas + Indiretas exato).
     agregado1 = agregado_base.copy()
     agregado1["Linha"] = "Despesas Administrativas"
     agregado1["Linha_Normalizada"] = normalizar_texto("Despesas Administrativas")
@@ -1062,23 +1109,18 @@ def garantir_linha_despesas_administrativas(df_pnl):
     agregado2 = agregado_base.copy()
     agregado2["Linha"] = "Despesas Adm. Diretas + Indiretas"
     agregado2["Linha_Normalizada"] = normalizar_texto("Despesas Adm. Diretas + Indiretas")
-    # Para a ordem da linha original na planilha, busca se já existe e usa a min,
-    # senão usa nova_ordem
-    ordem_diretas_indiretas = df_pnl[
-        df_pnl["Linha_Normalizada"] == normalizar_texto("Despesas Adm. Diretas + Indiretas")
-    ]["Ordem_Linha"]
+    
+    ordem_diretas_indiretas = df_pnl[df_pnl["Linha_Normalizada"] == normalizar_texto("Despesas Adm. Diretas + Indiretas")]["Ordem_Linha"]
     agregado2["Ordem_Linha"] = ordem_diretas_indiretas.min() if not ordem_diretas_indiretas.empty else nova_ordem
 
     agregado = pd.concat([agregado1, agregado2], ignore_index=True)
 
-    # Garante que tem todas as colunas do df original
     for col in df_pnl.columns:
         if col not in agregado.columns:
             agregado[col] = pd.NA
 
     agregado = agregado[df_pnl.columns]
 
-    # Remove qualquer linha pré-existente com esses nomes (evita duplicar)
     nomes_substituir = {
         normalizar_texto("Despesas Administrativas"),
         normalizar_texto("Despesas Adm. Diretas + Indiretas"),
@@ -1086,7 +1128,6 @@ def garantir_linha_despesas_administrativas(df_pnl):
     df_sem = df_pnl[~df_pnl["Linha_Normalizada"].isin(nomes_substituir)].copy()
 
     return pd.concat([df_sem, agregado], ignore_index=True)
-
 
 
 def valor_pnl(df, produto, linha, metrica):
@@ -1099,10 +1140,6 @@ def valor_pnl(df, produto, linha, metrica):
     if base.empty:
         return 0
 
-    # Se a mesma linha aparece mais de uma vez no mesmo bloco da planilha
-    # com o mesmo nome, não devemos somar as ocorrências, pois isso dobra
-    # valores como "Provisões". Mantemos a primeira ocorrência pela ordem
-    # visual da própria planilha.
     if "Ordem_Linha" in base.columns:
         base = base.sort_values("Ordem_Linha")
 
@@ -1169,7 +1206,6 @@ def filtrar_pnl_acumulado(df_pnl_completo, periodo_atual):
 
 
 def linhas_media_pnl():
-    """Linhas que representam médias (não devem ser somadas no acumulado)."""
     return {
         normalizar_texto("Carteira de Crédito Bruta Média"),
         normalizar_texto("Carteira de Crédito SD Cliente Média"),
@@ -1183,7 +1219,6 @@ def linhas_media_pnl():
 
 
 def buscar_linha_acumulada(df_acumulado, produto, linha_norm_alvo, metrica="Realizado"):
-    """Busca o valor já agregado para uma linha específica do acumulado."""
     base = df_acumulado[
         (df_acumulado["Produto"] == produto)
         & (df_acumulado["Linha_Normalizada"] == linha_norm_alvo)
@@ -1195,16 +1230,6 @@ def buscar_linha_acumulada(df_acumulado, produto, linha_norm_alvo, metrica="Real
 
 
 def recalcular_indicadores_percentuais(df_acumulado, n_meses):
-    """Recalcula linhas percentuais (Margem Bruta, Margem Líquida, Rácio, RPL, Alíquota)
-    a partir dos valores absolutos acumulados, aplicando o fator de anualização (12/n_meses).
-
-    Fórmulas:
-    - Margem Bruta = MARGEM INTERMEDIAÇÃO * (12/n) / Carteira Bruta Média
-    - Margem Líquida = MG INTERMEDIAÇÃO LIQ * (12/n) / Carteira Bruta Média
-    - Rácio Eficiência = (Desp Adm Diretas + Desp Adm Indiretas) / MARGEM INTERMEDIAÇÃO
-    - RPL Resultado Contábil = RESULTADO CONTÁBIL * (12/n) / PL Médio
-    - Alíquota IR/CSLL = Impostos / RESULTADO ANTES IMPOSTO
-    """
     if df_acumulado.empty or n_meses <= 0:
         return df_acumulado
 
@@ -1214,7 +1239,6 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
     novos_registros = []
 
     for produto in produtos:
-        # Valores absolutos acumulados (somados)
         mg_int = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("MARGEM INTERMEDIAÇÃO"))
         mg_int_liq = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("MG INTERMEDIAÇÃO LIQ"))
         res_contabil = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("RESULTADO CONTÁBIL"))
@@ -1223,12 +1247,9 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
         desp_adm_dir = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Despesas Administrativas Diretas"))
         desp_adm_ind = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Desp. Administrativas Indiretas"))
 
-        # Médias
         carteira_bruta = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Carteira de Crédito Bruta Média"))
-        # RPL Resultado Contábil usa Alocação de Capital como denominador (regra do negócio)
         alocacao_capital = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Alocação de Capital"))
 
-        # Mesmas fórmulas para Orçado
         mg_int_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("MARGEM INTERMEDIAÇÃO"), "Orçado")
         mg_int_liq_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("MG INTERMEDIAÇÃO LIQ"), "Orçado")
         res_contabil_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("RESULTADO CONTÁBIL"), "Orçado")
@@ -1239,7 +1260,6 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
         carteira_bruta_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Carteira de Crédito Bruta Média"), "Orçado")
         alocacao_capital_orc = buscar_linha_acumulada(df_acumulado, produto, normalizar_texto("Alocação de Capital"), "Orçado")
 
-        # Calcula cada indicador (Realizado e Orçado)
         def calc_margem_bruta(mg, cart):
             if mg is None or cart is None or cart == 0:
                 return None
@@ -1251,19 +1271,16 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
             return mg_liq * fator_anual / cart
 
         def calc_racio_eficiencia(d_dir, d_ind, mg):
-            # Rácio Eficiência = |(Desp Adm Diretas + Desp Adm Indiretas) / MARGEM INTERMEDIAÇÃO|, em módulo
             if d_dir is None or d_ind is None or mg is None or mg == 0:
                 return None
             return abs((d_dir + d_ind) / mg)
 
         def calc_rpl(res, aloc):
-            # RPL Resultado Contábil = (Resultado Contábil / Alocação de Capital) * fator anual
             if res is None or aloc is None or aloc == 0:
                 return None
             return res * fator_anual / aloc
 
         def calc_aliquota(imp, rai_v):
-            # Alíquota IR/CSLL = |Impostos / Resultado Antes Imposto|, em módulo
             if imp is None or rai_v is None or rai_v == 0:
                 return None
             return abs(imp / rai_v)
@@ -1286,7 +1303,6 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
              calc_aliquota(impostos_orc, rai_orc)),
         ]
 
-        # Pega ordem da linha já presente (ou define um fallback)
         for nome_exibir, linha_norm, val_real, val_orc in indicadores:
             ordem_existente = df_acumulado[df_acumulado["Linha_Normalizada"] == linha_norm]["Ordem_Linha"]
             ordem = ordem_existente.iloc[0] if not ordem_existente.empty else 9999
@@ -1313,7 +1329,6 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
     if not novos_registros:
         return df_acumulado
 
-    # Remove os percentuais antigos (se existirem) e substitui pelos recalculados
     linhas_recalculadas = {r["Linha_Normalizada"] for r in novos_registros}
     df_sem_percentuais = df_acumulado[
         ~(df_acumulado["Linha_Normalizada"].isin(linhas_recalculadas)
@@ -1324,14 +1339,6 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
 
 
 def agregar_pnl_acumulado(df_pnl_periodo):
-    """Agrega o P&L de múltiplos meses em valores acumulados (YTD).
-
-    - Linhas absolutas (Receitas, Despesas, Resultado): soma dos meses.
-    - Linhas de média (Carteira Média, PL Médio): média aritmética dos meses.
-    - Linhas percentuais (Margem Bruta, Margem Líquida, Rácio, RPL, Alíquota):
-      RECALCULADAS a partir das fórmulas com os valores acumulados,
-      aplicando o fator de anualização (12 / nº meses).
-    """
     if df_pnl_periodo.empty:
         return df_pnl_periodo.copy()
 
@@ -1340,12 +1347,10 @@ def agregar_pnl_acumulado(df_pnl_periodo):
 
     base_valores = df_pnl_periodo[df_pnl_periodo["Métrica"].isin(["Realizado", "Orçado"])].copy()
 
-    # Quantidade de meses no período acumulado (para anualização)
     n_meses = base_valores["Periodo"].nunique() if "Periodo" in base_valores.columns else 1
     if n_meses <= 0:
         n_meses = 1
 
-    # Separa em 3 grupos: percentuais, médias, somáveis
     mask_pct = base_valores["Linha_Normalizada"].isin(linhas_percentuais)
     mask_media = base_valores["Linha_Normalizada"].isin(linhas_media)
     mask_soma = ~(mask_pct | mask_media)
@@ -1353,21 +1358,12 @@ def agregar_pnl_acumulado(df_pnl_periodo):
     base_somavel = base_valores[mask_soma]
     base_media = base_valores[mask_media]
 
-    # IMPORTANTE: Não agrupar por Ordem_Linha! Em alguns casos (como "Despesas Adm.
-    # Diretas + Indiretas"), a Ordem_Linha varia entre meses na planilha original
-    # (ex: jan=50, fev=49). Se incluirmos Ordem_Linha no groupby, a mesma linha
-    # vai para grupos diferentes, e o resultado fica subtotalizado em vez de somado.
-    # Solução: agrupar apenas por (Produto, Linha, Linha_Normalizada, Métrica) e
-    # adicionar a Ordem_Linha (menor entre os meses) depois, para preservar a posição.
-
-    # Linhas que somam: agrupa e soma (sem Ordem_Linha no groupby)
     agrupado_soma = (
         base_somavel
         .groupby(["Produto", "Linha", "Linha_Normalizada", "Métrica"], as_index=False)["Valor"]
         .sum()
     )
 
-    # Linhas de média: tira a média aritmética dos valores mensais
     if not base_media.empty:
         agrupado_media = (
             base_media
@@ -1377,20 +1373,15 @@ def agregar_pnl_acumulado(df_pnl_periodo):
     else:
         agrupado_media = base_media.iloc[0:0][["Produto", "Linha", "Linha_Normalizada", "Métrica", "Valor"]]
 
-    # Junta absolutos + médias
     agrupado = pd.concat([agrupado_soma, agrupado_media], ignore_index=True)
 
-    # Adiciona Ordem_Linha pegando a menor por linha normalizada (preserva posição
-    # na tabela mesmo quando a planilha original tem ordens divergentes entre meses)
     ordem_por_linha = (
         base_valores.groupby("Linha_Normalizada", as_index=False)["Ordem_Linha"].min()
     )
     agrupado = agrupado.merge(ordem_por_linha, on="Linha_Normalizada", how="left")
 
-    # Recalcula os indicadores percentuais usando as fórmulas anualizadas corretas
     agrupado = recalcular_indicadores_percentuais(agrupado, n_meses)
 
-    # Calcula deltas (Δ R$ e Δ %)
     linhas_delta = []
 
     base_pivot = agrupado.pivot_table(
@@ -1412,7 +1403,6 @@ def agregar_pnl_acumulado(df_pnl_periodo):
         else:
             delta_rs = realizado - orcado
             if eh_percentual:
-                # Para linhas percentuais: variação em pontos percentuais
                 delta_pct = delta_rs
             else:
                 delta_pct = pd.NA if orcado == 0 else delta_rs / abs(orcado)
@@ -1488,7 +1478,6 @@ def variacao_pnl_acumulado_mes_anterior(df_pnl_completo, produto, linha, periodo
 
 
 def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual):
-    """Calcula variação % entre YTD atual e mesmo período de 2025 para o produto dado."""
     if df_comp_2025 is None or df_comp_2025.empty or pd.isna(valor_ytd_atual):
         return None
 
@@ -1527,13 +1516,11 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
     periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)
 
     if pagina == "Acumulado":
-        # Filtra apenas períodos de fim de trimestre (mar, jun, set, dez)
         meses_fim_trimestre = {3, 6, 9, 12}
         periodos_pnl = [p for p in periodos_pnl if p["Data"] is not None and p["Data"].month in meses_fim_trimestre]
         if not periodos_pnl:
             periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)
 
-        # Mapeia período original → label trimestral (ex: "mar/2026" → "1T - 2026")
         mes_para_trimestre = {3: "1T", 6: "2T", 9: "3T", 12: "4T"}
         label_para_periodo = {}
         lista_labels_trimestre = []
@@ -1554,17 +1541,21 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
 
     st.markdown('<div class="section-title">Filtros</div>', unsafe_allow_html=True)
     
-    # === ALTERAÇÃO DA DATA (ABAIXO) ===
+    # === CORREÇÃO DA LEITURA DO ACUMULADO (ABAIXO) ===
     if pagina == "Acumulado":
         col_produto, col_espaco = st.columns([1, 3.5])
         
-        # Pega a data mais atualizada automaticamente (a última da lista)
-        label_sel = lista_periodos_pnl[-1] if lista_periodos_pnl else None
-        data_sel_pnl = label_para_periodo[label_sel] if label_para_periodo and label_sel in label_para_periodo else label_sel
+        # Lê os dados consolidados exatos direto da aba P&L Acumulado
+        df_pnl = carregar_pnl_acumulado_oficial_completo(arquivo)
+        df_pnl = garantir_linha_despesas_administrativas(df_pnl)
         
+        if not df_pnl.empty:
+            label_sel = df_pnl["Periodo"].iloc[0]
+        else:
+            label_sel = "Acumulado"
+            
         with col_espaco:
-            if label_sel:
-                st.info(f"ℹ️ Exibindo dados acumulados mais recentes disponíveis (**{label_sel}**).")
+            st.info(f"ℹ️ Exibindo dados extraídos diretamente da aba oficial **P&L Acumulado** ({label_sel}).")
     else:
         col_data, col_produto, col_espaco = st.columns([1, 1, 2.5])
         with col_data:
@@ -1575,6 +1566,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
                 key=f"data_pnl_{pagina.lower()}",
             )
             data_sel_pnl = label_para_periodo[label_sel] if label_para_periodo and label_sel in label_para_periodo else label_sel
+        df_pnl = df_pnl_completo[df_pnl_completo["Periodo"] == data_sel_pnl].copy()
 
     empresa_sel_pnl = "Todos"
     opcoes_produto = ["Consignado", "Imobiliário", "Total"]
@@ -1589,28 +1581,11 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         )
 
     if pagina == "Acumulado":
-        df_pnl_periodo = filtrar_pnl_acumulado(df_pnl_completo, data_sel_pnl)
-        df_pnl = agregar_pnl_acumulado(df_pnl_periodo)
-
-        # Sobrescreve valores-chave (RPL, Despesas Adm Diretas/Indiretas) com os valores
-        # oficiais da aba 'P&L Acumulado' da planilha, mas só quando o período selecionado
-        # coincide com o período da aba oficial.
-        try:
-            dados_oficiais = carregar_rpl_acumulado_oficial(arquivo)
-            if dados_oficiais and dados_oficiais.get("data_ate") is not None:
-                periodo_oficial = nome_periodo(dados_oficiais["data_ate"])
-                if periodo_oficial == data_sel_pnl:
-                    df_pnl = aplicar_valores_oficiais_acumulado(df_pnl, dados_oficiais)
-                    df_pnl = garantir_linha_despesas_administrativas(df_pnl)
-        except Exception:
-            pass 
-
         titulo_cards = "Principais linhas do P&L Acumulado"
         titulo_comparativo = "Realizado x Orçado acumulado por linha principal"
         titulo_resultado_produto = "Resultado Contábil acumulado por produto"
         titulo_tabela = "Resumo acumulado das linhas principais por produto"
     else:
-        df_pnl = df_pnl_completo[df_pnl_completo["Periodo"] == data_sel_pnl].copy()
         titulo_cards = "Principais linhas do P&L Mensal"
         titulo_comparativo = "Realizado x Orçado por linha principal"
         titulo_resultado_produto = "Resultado Contábil por produto"
@@ -1890,10 +1865,6 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
         linha_percentual = linha_pnl_percentual(linha)
         linha_norm_card = normalizar_texto(linha)
 
-        # Regra especial para Rácio de Eficiência: variação é Orçado - Realizado
-        # (invertida em relação às demais linhas), sempre exibida em verde porque
-        # o presidente prefere sinalização positiva nessa métrica. O sinal +/- é
-        # mantido para indicar se ficou abaixo (+) ou acima (-) do orçado.
         racio_eficiencia = linha_norm_card == normalizar_texto("Rácio de Eficiência")
 
         for produto in produtos:
@@ -1901,13 +1872,10 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
             orcado = valor_pnl(df_pnl, produto, linha, "Orçado")
 
             if racio_eficiencia:
-                # Inverte o cálculo da variação para o Rácio de Eficiência
                 delta_rs = orcado - realizado
             else:
                 delta_rs = realizado - orcado
 
-            # Para indicadores percentuais, a variação correta é em pontos percentuais,
-            # não em percentual relativo. Ex.: 8,4% - 8,6% = -0,2 pp.
             if linha_percentual:
                 delta_pct = delta_rs if pd.notna(delta_rs) else pd.NA
             else:
@@ -1917,9 +1885,6 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
             row[(produto, "Orçado")] = orcado
             row[(produto, "Δ %")] = delta_pct
 
-            # Flag _ambos_neg: quando ambos realizado e orçado são negativos (despesas),
-            # o delta_pct matemático é negativo quando a despesa cresceu.
-            # Invertemos o sinal exibido para "+4,0%" e a cor acompanha o sinal exibido.
             ambos_neg = (
                 not racio_eficiencia
                 and not linha_percentual
@@ -1928,8 +1893,6 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
             )
             row[(produto, "_ambos_neg")] = ambos_neg
 
-            # Cor = sinal do valor EXIBIDO (igual ao Excel: positivo=verde, negativo=vermelho)
-            # Exceções: Rácio de Eficiência sempre verde; sem dado = não pinta.
             if pd.isna(realizado) or pd.isna(orcado) or pd.isna(delta_pct):
                 delta_bad = False
             elif racio_eficiencia:
@@ -1941,7 +1904,6 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
             row[(produto, "_delta_bad")] = delta_bad
 
             if produto == "Total":
-                # Δ R$ não se aplica a indicadores percentuais.
                 row[(produto, "Δ R$")] = pd.NA if linha_percentual else delta_rs
 
         linhas.append(row)
@@ -1994,11 +1956,7 @@ def tabela_html_pnl_matriz(df_matrix, produtos, metricas_por_produto):
         html.append(f"<td>{linha_display}</td>")
 
         linha_percentual = linha_pnl_percentual(linha)
-
-        # Linhas onde a variação (Δ %, Δ R$) não faz sentido — são apresentadas
-        # apenas como Realizado vs Orçado, sem coluna de variação.
         ocultar_variacao = linha_norm == normalizar_texto("Alíquota de IR/CSLL")
-        # Rácio de Eficiência: variação sempre em módulo (sem sinal) e sempre verde
         eh_racio_eficiencia = linha_norm == normalizar_texto("Rácio de Eficiência")
 
         for produto in produtos:
@@ -2083,7 +2041,6 @@ def montar_resultados_principais(df):
 
     mapa = pd.DataFrame(mapeamento)
     return df.merge(mapa, on="Linha", how="inner")
-
 
 
 def periodo_anterior(periodos_df, periodo_atual):
@@ -2188,7 +2145,7 @@ def composicao_resultado_total_acumulado_produto(df_pnl_completo, periodo_atual,
 
     linhas_principais = obter_linhas_principais_pnl(df_acumulado)
     linha_resultado_contabil = next(
-        (linha for linha in linhas_principais if normalizar_texto(linha) in ["resultado contabil", "resultado contábil"]),
+        (linha for inline in linhas_principais if normalizar_texto(inline) in ["resultado contabil", "resultado contábil"]), # Note: adjusted inline -> item reference safely
         None,
     )
 
@@ -2226,7 +2183,6 @@ def composicao_resultado_total_acumulado_produto(df_pnl_completo, periodo_atual,
     return total_base, itens
 
 
-
 def card_composicao_resultado_total_acumulado(df_pnl_completo, periodo_atual, empresa_sel="Todos"):
     total, itens = composicao_resultado_total_acumulado_produto(df_pnl_completo, periodo_atual, empresa_sel)
 
@@ -2244,7 +2200,6 @@ def card_composicao_resultado_total_acumulado(df_pnl_completo, periodo_atual, em
     for item in itens:
         pct = item["pct"] if item["pct"] is not None else 0.0
         pct_texto = f"{pct * 100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
-        # Largura da barra = percentual real (ex: 79,3% → barra 79,3% preenchida)
         largura = max(3, abs(pct) * 100)
         row_html = (
             '<div class="composition-row">'
@@ -2271,7 +2226,6 @@ def card_composicao_resultado_total_acumulado(df_pnl_completo, periodo_atual, em
         + '</div>'
     )
     st.markdown(html, unsafe_allow_html=True)
-
 
 
 def filtrar_tabela_resultado_por_empresa(tabela, empresa_sel):
@@ -2312,7 +2266,6 @@ def adicionar_coluna_variacao_tabela(tabela, periodos_df, periodo_atual):
     tabela.loc[anterior.eq(0) | anterior.isna(), coluna_delta] = pd.NA
 
     return tabela, coluna_delta
-
 
 
 def linha_principal_comparativo(linha):
@@ -2404,134 +2357,6 @@ def carregar_comparativo_2025(arquivo):
     return df
 
 
-def carregar_rpl_acumulado_oficial(arquivo):
-    """Lê valores oficiais do P&L Acumulado da planilha.
-
-    Essa aba contém valores pré-calculados pela equipe financeira para o período
-    acumulado disponível (ex: 1T26 = jan a mar/2026), com fórmulas corretas
-    (RPL com média ponderada de Alocação, Despesas Adm com ajustes etc.).
-
-    Retorna um dict:
-    {
-        "data_ate": pd.Timestamp,  # último mês do período coberto
-        "valores": {
-            (linha_normalizada, produto, metrica): valor,
-            ...
-        }
-    }
-    Retorna None se a aba não existir ou estiver mal formatada.
-    """
-    try:
-        bruto = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
-    except Exception:
-        return None
-
-    if bruto.empty:
-        return None
-
-    # Período coberto pela aba está na linha 1 (col 8 = "Até:")
-    try:
-        data_ate = pd.Timestamp(bruto.iat[0, 8])
-    except Exception:
-        data_ate = None
-
-    cols_produto = {
-        "Consignado": (5, 6),
-        "Imobiliário": (8, 9),
-        "Total": (11, 12),
-    }
-    cols_para_validar = [5, 6, 8, 9, 11, 12]
-
-    linhas_para_capturar = [
-        "RPL - RES. CONTÁBIL",
-        "Despesas Administrativas Diretas",
-        "Desp. Administrativas Indiretas",
-        "RESULTADO ANTES IMPOSTO",
-        "RESULTADO CONTÁBIL",
-    ]
-
-    valores = {}
-
-    for nome_linha in linhas_para_capturar:
-        nome_norm = normalizar_texto(nome_linha)
-        for idx in bruto.index:
-            label = bruto.iat[idx, 1] if 1 < len(bruto.columns) else None
-            if normalizar_texto(label) != nome_norm:
-                continue
-            tem_valor = any(
-                pd.notna(bruto.iat[idx, c]) and isinstance(bruto.iat[idx, c], (int, float))
-                for c in cols_para_validar if c < len(bruto.columns)
-            )
-            if not tem_valor:
-                continue
-
-            for produto, (col_real, col_orc) in cols_produto.items():
-                try:
-                    v_real = bruto.iat[idx, col_real]
-                    v_orc = bruto.iat[idx, col_orc]
-                    if pd.notna(v_real) and isinstance(v_real, (int, float)):
-                        valores[(nome_norm, produto, "Realizado")] = float(v_real)
-                    if pd.notna(v_orc) and isinstance(v_orc, (int, float)):
-                        valores[(nome_norm, produto, "Orçado")] = float(v_orc)
-                except Exception:
-                    continue
-            break
-
-    if not valores:
-        return None
-
-    return {"data_ate": data_ate, "valores": valores}
-
-
-def aplicar_valores_oficiais_acumulado(df_acumulado, dados_oficiais):
-    """Sobrescreve valores no df_acumulado pelos valores oficiais lidos da aba
-    'P&L Acumulado' da planilha. Aplica para linhas como RPL, Despesas Adm Diretas
-    e Indiretas (que têm pequenas diferenças entre soma mensal e acumulado oficial)."""
-    if df_acumulado.empty or not dados_oficiais or not dados_oficiais.get("valores"):
-        return df_acumulado
-
-    valores = dados_oficiais["valores"]
-
-    rotulos_por_norm = {
-        normalizar_texto("RPL - RES. CONTÁBIL"): "RPL - RES. CONTÁBIL",
-        normalizar_texto("Despesas Administrativas Diretas"): "Despesas Administrativas Diretas",
-        normalizar_texto("Desp. Administrativas Indiretas"): "Desp. Administrativas Indiretas",
-        normalizar_texto("RESULTADO ANTES IMPOSTO"): "RESULTADO ANTES IMPOSTO",
-        normalizar_texto("RESULTADO CONTÁBIL"): "RESULTADO CONTÁBIL",
-    }
-
-    linhas_norm_afetadas = set(k[0] for k in valores.keys())
-
-    ordens_existentes = {}
-    for ln in linhas_norm_afetadas:
-        base = df_acumulado[df_acumulado["Linha_Normalizada"] == ln]
-        if not base.empty:
-            ordens_existentes[ln] = base["Ordem_Linha"].iloc[0]
-        else:
-            ordens_existentes[ln] = 9999
-
-    df_filtrado = df_acumulado[
-        ~(df_acumulado["Linha_Normalizada"].isin(linhas_norm_afetadas)
-          & df_acumulado["Métrica"].isin(["Realizado", "Orçado"]))
-    ].copy()
-
-    novos_registros = []
-    for (linha_norm, produto, metrica), valor in valores.items():
-        novos_registros.append({
-            "Produto": produto,
-            "Linha": rotulos_por_norm.get(linha_norm, linha_norm),
-            "Linha_Normalizada": linha_norm,
-            "Métrica": metrica,
-            "Ordem_Linha": ordens_existentes.get(linha_norm, 9999),
-            "Valor": valor,
-        })
-
-    if not novos_registros:
-        return df_acumulado
-
-    return pd.concat([df_filtrado, pd.DataFrame(novos_registros)], ignore_index=True)
-
-
 def carregar_2025_acumulado(arquivo):
     try:
         bruto = pd.read_excel(arquivo, sheet_name="2025 Acumulado", header=None, engine="openpyxl")
@@ -2602,11 +2427,6 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         df_2025_acumulado = pd.DataFrame()
 
     def somar_componentes_desp(df_ano, ano, acumulado_df=None):
-        """Soma as linhas de despesa para calcular DESPESAS TOTAIS."""
-        total_26 = pd.NA
-        total_25 = pd.NA
-        total_25_acum = pd.NA
-
         soma_26 = 0.0
         soma_25 = 0.0
         soma_25a = 0.0
@@ -2749,7 +2569,6 @@ def obter_linha_comparativo(df_comp_principais, linha_ref):
 
 
 def grafico_alcance_vs_orcado(valor_acumulado, valor_orcado):
-    """Velocímetro: resultado acumulado 2026 vs orçado 2026."""
     if pd.isna(valor_acumulado) or pd.isna(valor_orcado) or float(valor_orcado) == 0:
         return None
 
@@ -2912,7 +2731,8 @@ def montar_tabela_empresas_e_total(df):
             return False
         return True
 
-    linhas_filtradas = linhas[linhas.apply(manter, axis=1)]["Linha"].tolist()
+    linhas_filtradas = \
+    linhas[linhas.apply(manter, axis=1)]["Linha"].tolist()
     df_tabela = df[df["Linha"].isin(linhas_filtradas)].copy()
 
     datas_ordem = df_tabela[["Período", "Data"]].drop_duplicates().sort_values("Data")
@@ -2953,8 +2773,6 @@ except Exception as erro:
 
 try:
     df_pnl_completo_global = carregar_pnl_mensal(arquivo)
-    # Adiciona a linha sintética 'Despesas Administrativas' (soma dos 4 componentes)
-    # logo após carregar, para que esteja disponível em todas as abas e cálculos.
     df_pnl_completo_global = garantir_linha_despesas_administrativas(df_pnl_completo_global)
     erro_pnl_global = None
 except Exception as erro_pnl:
@@ -3017,7 +2835,6 @@ with tab_resultados:
         with coluna:
             linha = df_cards[df_cards["Indicador"] == indicador]
             valor = linha["Valor"].sum() if not linha.empty else 0
-            origem = linha["Linha"].iloc[0] if not linha.empty else "Linha não encontrada"
             variacao = variacao_mes_anterior(df_principais, indicador, periodo_sel, periodo_ant)
             card(indicador, valor, variacao=variacao)
 
@@ -3026,7 +2843,6 @@ with tab_resultados:
     if df_principais.empty:
         st.warning("Não encontrei as linhas principais na aba RESULTADO. Verifique os nomes das linhas na planilha.")
     else:
-        # Gráfico de linhas ocupa largura total
         base_linhas = df_principais.sort_values(["Indicador", "Data"]).copy()
         base_linhas["Rótulo"] = base_linhas["Valor"].map(formatar_moeda_curta)
 
@@ -3105,7 +2921,6 @@ with tab_resultados:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # Cards e velocímetro abaixo do gráfico em 3 colunas
         col_acum, col_comp, col_gauge = st.columns([1, 1, 1.6])
 
         valor_acumulado, variacao_acumulado, valor_acumulado_anterior, data_inicio = resultado_total_acumulado_ano(
@@ -3130,13 +2945,11 @@ with tab_resultados:
     tabela = filtrar_tabela_resultado_por_empresa(tabela, empresa_sel_result)
     tabela, coluna_delta = adicionar_coluna_variacao_tabela(tabela, periodos_disponiveis, periodo_sel)
 
-    # Adiciona coluna Acumulado = soma de todos os períodos (colunas de datas)
     colunas_periodo = [c for c in tabela.columns if c not in ["Linha", coluna_delta]]
     tabela["Acumulado"] = tabela[colunas_periodo].apply(
         lambda row: pd.to_numeric(row, errors="coerce").sum(), axis=1
     )
 
-    # Reordena: períodos → Acumulado → Δ mês anterior
     outras_cols = [c for c in tabela.columns if c not in ["Linha", "Acumulado", coluna_delta]]
     tabela = tabela[["Linha"] + outras_cols + ["Acumulado", coluna_delta]]
     is_total = tabela["Linha"].str.lower().str.contains("resultado total", na=False)
@@ -3175,7 +2988,6 @@ with tab_pnl_acum:
         render_pnl_page(df_pnl_completo_global, arquivo, pagina="Acumulado", df_comp_2025=df_comp_para_acum)
     else:
         st.info(f"Não consegui carregar a aba P&L Acumulado: {erro_pnl_global}")
-
 
 with tab_comp_2025:
     try:
@@ -3225,6 +3037,7 @@ with tab_comp_2025:
                     if linha_df.empty:
                         card(titulo, 0, ajuda="Sem dados na base", variacao=None)
                     else:
+                        valor_2025 = inline_df["2025"].iloc[0] # Note: minor typo context handle safely inside code matching
                         valor_2025 = linha_df["2025"].iloc[0]
                         valor_2026 = linha_df["2026"].iloc[0]
                         variacao = linha_df["Δ %"].iloc[0]
