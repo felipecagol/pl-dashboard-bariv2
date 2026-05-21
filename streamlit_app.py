@@ -906,7 +906,6 @@ def carregar_pnl_mensal(arquivo):
 
 @st.cache_data(show_spinner=False)
 def carregar_pnl_acumulado_oficial_completo(arquivo):
-    """Carrega integralmente e de forma direta os valores oficiais da aba 'P&L Acumulado'."""
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
     except Exception:
@@ -2285,71 +2284,80 @@ def carregar_comparativo_2025(arquivo):
     except Exception:
         bruto = pd.read_excel(arquivo, sheet_name="Comparativo 2025", header=None, engine="openpyxl")
 
-    def valor_numero(v):
-        if pd.isna(v):
-            return pd.NA
-        try:
-            return float(v)
-        except Exception:
-            return pd.NA
+    # Localiza dinamicamente as colunas de rótulos para se adaptar caso a planilha sofra offset (espaços em branco)
+    label_cols = []
+    for col in bruto.columns:
+        for r in range(min(50, len(bruto))):
+            val = normalizar_texto(bruto.iat[r, col])
+            # Palavras âncora que definem que essa coluna é a de texto/títulos
+            if val in ["receitas", "resultado contabil", "resultado contábil", "despesas totais"]:
+                if col not in label_cols:
+                    label_cols.append(col)
+                break
 
-    blocos_2026 = [
-        {"Produto": "Consignado",  "label_col": 1,  "realizado_col": 5,  "orcado_col": 6},
-        {"Produto": "Imobiliário", "label_col": 1,  "realizado_col": 8,  "orcado_col": 9},
-        {"Produto": "Total",       "label_col": 1,  "realizado_col": 11, "orcado_col": 12},
-    ]
-    blocos_2025 = [
-        {"Produto": "Consignado",  "label_col": 15, "realizado_col": 19, "orcado_col": 20},
-        {"Produto": "Imobiliário", "label_col": 15, "realizado_col": 22, "orcado_col": 23},
-        {"Produto": "Total",       "label_col": 15, "realizado_col": 25, "orcado_col": 26},
-    ]
+    if not label_cols:
+        # Fallback de segurança para o mapeamento original caso a leitura dinâmica falhe
+        label_cols = [1, 15]
+
+    col_26 = label_cols[0]
+    col_25 = label_cols[1] if len(label_cols) > 1 else None
+
+    def extrair_bloco(label_col, ano):
+        registros_bloco = []
+        if label_col is None or label_col >= len(bruto.columns):
+            return registros_bloco
+
+        # A distância (offset) entre a coluna de texto e as colunas de dados é imutável
+        blocos = [
+            {"Produto": "Consignado",  "realizado_col": label_col + 4,  "orcado_col": label_col + 5},
+            {"Produto": "Imobiliário", "realizado_col": label_col + 7,  "orcado_col": label_col + 8},
+            {"Produto": "Total",       "realizado_col": label_col + 10, "orcado_col": label_col + 11},
+        ]
+
+        for bloco in blocos:
+            for idx_row in bruto.index:
+                linha = bruto.iat[idx_row, label_col]
+                linha_norm = normalizar_texto(linha)
+                if not linha_norm:
+                    continue
+                
+                realizado = pd.NA
+                if bloco["realizado_col"] < len(bruto.columns):
+                    try:
+                        v = bruto.iat[idx_row, bloco["realizado_col"]]
+                        if pd.notna(v): realizado = float(v)
+                    except: pass
+                    
+                orcado = pd.NA
+                if bloco["orcado_col"] < len(bruto.columns):
+                    try:
+                        v = bruto.iat[idx_row, bloco["orcado_col"]]
+                        if pd.notna(v): orcado = float(v)
+                    except: pass
+                    
+                registros_bloco.append({
+                    "Ano": ano,
+                    "Produto": bloco["Produto"],
+                    "Linha": str(linha).strip(),
+                    "Linha_Normalizada": linha_norm,
+                    "Realizado": realizado,
+                    "Orçado": orcado,
+                    "Ordem": int(idx_row),
+                })
+        return registros_bloco
 
     registros = []
-
-    for bloco in blocos_2025:
-        for idx_row in bruto.index:
-            linha = bruto.iat[idx_row, bloco["label_col"]] if bloco["label_col"] < len(bruto.columns) else None
-            linha_norm = normalizar_texto(linha)
-            if not linha_norm:
-                continue
-            realizado = valor_numero(bruto.iat[idx_row, bloco["realizado_col"]]) if bloco["realizado_col"] < len(bruto.columns) else pd.NA
-            orcado    = valor_numero(bruto.iat[idx_row, bloco["orcado_col"]])    if bloco["orcado_col"]    < len(bruto.columns) else pd.NA
-            registros.append({
-                "Ano": 2025,
-                "Produto": bloco["Produto"],
-                "Linha": str(linha).strip(),
-                "Linha_Normalizada": linha_norm,
-                "Realizado": realizado,
-                "Orçado": orcado,
-                "Ordem": int(idx_row),
-            })
-
-    for bloco in blocos_2026:
-        for idx_row in bruto.index:
-            linha = bruto.iat[idx_row, bloco["label_col"]] if bloco["label_col"] < len(bruto.columns) else None
-            linha_norm = normalizar_texto(linha)
-            if not linha_norm:
-                continue
-            realizado = valor_numero(bruto.iat[idx_row, bloco["realizado_col"]]) if bloco["realizado_col"] < len(bruto.columns) else pd.NA
-            orcado    = valor_numero(bruto.iat[idx_row, bloco["orcado_col"]])    if bloco["orcado_col"]    < len(bruto.columns) else pd.NA
-            registros.append({
-                "Ano": 2026,
-                "Produto": bloco["Produto"],
-                "Linha": str(linha).strip(),
-                "Linha_Normalizada": linha_norm,
-                "Realizado": realizado,
-                "Orçado": orcado,
-                "Ordem": int(idx_row),
-            })
+    registros.extend(extrair_bloco(col_26, 2026))
+    if col_25 is not None:
+        registros.extend(extrair_bloco(col_25, 2025))
 
     df = pd.DataFrame(registros)
     if df.empty:
         return df
 
-    df = df.sort_values(["Ano", "Produto", "Ordem"]).drop_duplicates(
+    return df.sort_values(["Ano", "Produto", "Ordem"]).drop_duplicates(
         ["Ano", "Produto", "Linha_Normalizada"], keep="first"
     )
-    return df
 
 
 def carregar_2025_acumulado(arquivo):
@@ -2358,35 +2366,44 @@ def carregar_2025_acumulado(arquivo):
     except Exception:
         return pd.DataFrame()
 
+    label_col = 0
+    for col in bruto.columns:
+        for r in range(min(50, len(bruto))):
+            val = normalizar_texto(bruto.iat[r, col])
+            if val in ["receitas", "resultado contabil", "resultado contábil"]:
+                label_col = col
+                break
+        if label_col != 0:
+            break
+
+    col_real = label_col + 7
+    col_orc = label_col + 8
+    col_delta = label_col + 9
+
     def valor_numero(v):
-        if pd.isna(v):
-            return pd.NA
-        try:
-            return float(v)
-        except Exception:
-            return pd.NA
+        if pd.isna(v): return pd.NA
+        try: return float(v)
+        except: return pd.NA
 
     registros = []
     for idx_row in bruto.index:
-        linha = bruto.iat[idx_row, 0] if 0 in bruto.columns else None
+        linha = bruto.iat[idx_row, label_col] if label_col < len(bruto.columns) else None
         linha_norm = normalizar_texto(linha)
         if not linha_norm:
             continue
 
-        realizado_total = valor_numero(bruto.iat[idx_row, 7]) if 7 in bruto.columns else pd.NA
-        orcado_total = valor_numero(bruto.iat[idx_row, 8]) if 8 in bruto.columns else pd.NA
-        delta_total = valor_numero(bruto.iat[idx_row, 9]) if 9 in bruto.columns else pd.NA
+        realizado_total = valor_numero(bruto.iat[idx_row, col_real]) if col_real < len(bruto.columns) else pd.NA
+        orcado_total = valor_numero(bruto.iat[idx_row, col_orc]) if col_orc < len(bruto.columns) else pd.NA
+        delta_total = valor_numero(bruto.iat[idx_row, col_delta]) if col_delta < len(bruto.columns) else pd.NA
 
-        registros.append(
-            {
-                "Linha": str(linha).strip(),
-                "Linha_Normalizada": linha_norm,
-                "Realizado": realizado_total,
-                "Orçado": orcado_total,
-                "Δ Orçado": delta_total,
-                "Ordem": int(idx_row),
-            }
-        )
+        registros.append({
+            "Linha": str(linha).strip(),
+            "Linha_Normalizada": linha_norm,
+            "Realizado": realizado_total,
+            "Orçado": orcado_total,
+            "Δ Orçado": delta_total,
+            "Ordem": int(idx_row),
+        })
 
     df = pd.DataFrame(registros)
     if df.empty:
