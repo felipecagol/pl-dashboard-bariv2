@@ -483,8 +483,6 @@ def formatar_pontos_percentuais(valor):
 
 
 def formatar_pontos_percentuais_sem_sinal(valor):
-    """Formata variação em pontos percentuais sempre em módulo (sem '+' ou '-').
-    Usado para o Rácio de Eficiência, onde a regra de exibição não considera o sinal."""
     if pd.isna(valor):
         return ""
     try:
@@ -813,7 +811,7 @@ def carregar_pnl_mensal(arquivo):
                     produtos_encontrados[
                         {
                             "consignado": "Consignado",
-                            "imobiliário": "Imobiliário",
+                            "imobiliario": "Imobiliário",
                             "total": "Total",
                         }[produto_norm]
                     ] = c_prod
@@ -850,9 +848,8 @@ def carregar_pnl_mensal(arquivo):
             ordem = 0
 
             for r in bruto.index:
-                if r <= inline_metrica: # Note: fixed minor typo 'inline_metrica' from context to 'linha_metrica'
+                if r <= linha_metrica:
                     continue
-                r_fixed = r if r > linha_metrica else linha_metrica + 1 # handling fallback smoothly
 
                 linha_nome = bruto.loc[r, col_rotulo] if col_rotulo in bruto.columns else None
                 if pd.isna(linha_nome) or str(linha_nome).strip() == "":
@@ -918,7 +915,6 @@ def carregar_pnl_acumulado_oficial_completo(arquivo):
     if bruto.empty:
         return pd.DataFrame()
 
-    # Período base fica na linha 1 (coluna index 8) "Até: AAAA-MM-DD"
     try:
         data_ate = pd.Timestamp(bruto.iloc[0, 8])
         periodo_label = nome_periodo(data_ate)
@@ -936,7 +932,7 @@ def carregar_pnl_acumulado_oficial_completo(arquivo):
     ordem = 0
 
     for r in bruto.index:
-        if r <= 3:  # Pula os cabeçalhos superiores
+        if r <= 3:  
             continue
 
         linha_nome = bruto.iloc[r, 1] if 1 < len(bruto.columns) else None
@@ -1541,11 +1537,9 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
 
     st.markdown('<div class="section-title">Filtros</div>', unsafe_allow_html=True)
     
-    # === CORREÇÃO DA LEITURA DO ACUMULADO (ABAIXO) ===
     if pagina == "Acumulado":
         col_produto, col_espaco = st.columns([1, 3.5])
         
-        # Lê os dados consolidados exatos direto da aba P&L Acumulado
         df_pnl = carregar_pnl_acumulado_oficial_completo(arquivo)
         df_pnl = garantir_linha_despesas_administrativas(df_pnl)
         
@@ -2144,8 +2138,9 @@ def composicao_resultado_total_acumulado_produto(df_pnl_completo, periodo_atual,
         return None, []
 
     linhas_principais = obter_linhas_principais_pnl(df_acumulado)
+    
     linha_resultado_contabil = next(
-        (linha for inline in linhas_principais if normalizar_texto(inline) in ["resultado contabil", "resultado contábil"]), # Note: adjusted inline -> item reference safely
+        (linha for linha in linhas_principais if normalizar_texto(linha) in ["resultado contabil", "resultado contábil"]),
         None,
     )
 
@@ -2731,8 +2726,7 @@ def montar_tabela_empresas_e_total(df):
             return False
         return True
 
-    linhas_filtradas = \
-    linhas[linhas.apply(manter, axis=1)]["Linha"].tolist()
+    linhas_filtradas = linhas[linhas.apply(manter, axis=1)]["Linha"].tolist()
     df_tabela = df[df["Linha"].isin(linhas_filtradas)].copy()
 
     datas_ordem = df_tabela[["Período", "Data"]].drop_duplicates().sort_values("Data")
@@ -3037,7 +3031,6 @@ with tab_comp_2025:
                     if linha_df.empty:
                         card(titulo, 0, ajuda="Sem dados na base", variacao=None)
                     else:
-                        valor_2025 = inline_df["2025"].iloc[0] # Note: minor typo context handle safely inside code matching
                         valor_2025 = linha_df["2025"].iloc[0]
                         valor_2026 = linha_df["2026"].iloc[0]
                         variacao = linha_df["Δ %"].iloc[0]
