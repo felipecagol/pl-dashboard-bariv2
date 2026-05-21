@@ -1553,17 +1553,28 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         label_para_periodo = None
 
     st.markdown('<div class="section-title">Filtros</div>', unsafe_allow_html=True)
-    col_data, col_produto, col_espaco = st.columns([1, 1, 2.5])
-
-    with col_data:
-        label_sel = st.selectbox(
-            "Data base",
-            lista_periodos_pnl,
-            index=len(lista_periodos_pnl) - 1,
-            key=f"data_pnl_{pagina.lower()}",
-        )
-        # Converte label trimestral de volta para o período original usado nos filtros
+    
+    # === ALTERAÇÃO DA DATA (ABAIXO) ===
+    if pagina == "Acumulado":
+        col_produto, col_espaco = st.columns([1, 3.5])
+        
+        # Pega a data mais atualizada automaticamente (a última da lista)
+        label_sel = lista_periodos_pnl[-1] if lista_periodos_pnl else None
         data_sel_pnl = label_para_periodo[label_sel] if label_para_periodo and label_sel in label_para_periodo else label_sel
+        
+        with col_espaco:
+            if label_sel:
+                st.info(f"ℹ️ Exibindo dados acumulados mais recentes disponíveis (**{label_sel}**).")
+    else:
+        col_data, col_produto, col_espaco = st.columns([1, 1, 2.5])
+        with col_data:
+            label_sel = st.selectbox(
+                "Data base",
+                lista_periodos_pnl,
+                index=len(lista_periodos_pnl) - 1,
+                key=f"data_pnl_{pagina.lower()}",
+            )
+            data_sel_pnl = label_para_periodo[label_sel] if label_para_periodo and label_sel in label_para_periodo else label_sel
 
     empresa_sel_pnl = "Todos"
     opcoes_produto = ["Consignado", "Imobiliário", "Total"]
@@ -1583,19 +1594,16 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
 
         # Sobrescreve valores-chave (RPL, Despesas Adm Diretas/Indiretas) com os valores
         # oficiais da aba 'P&L Acumulado' da planilha, mas só quando o período selecionado
-        # coincide com o período da aba oficial. Isso resolve pequenas discrepâncias entre
-        # a soma mensal e o acumulado oficial calculado pela equipe financeira.
+        # coincide com o período da aba oficial.
         try:
             dados_oficiais = carregar_rpl_acumulado_oficial(arquivo)
             if dados_oficiais and dados_oficiais.get("data_ate") is not None:
                 periodo_oficial = nome_periodo(dados_oficiais["data_ate"])
                 if periodo_oficial == data_sel_pnl:
                     df_pnl = aplicar_valores_oficiais_acumulado(df_pnl, dados_oficiais)
-                    # Recalcula a linha sintética 'Despesas Administrativas' com os
-                    # valores oficiais já aplicados (Diretas + Indiretas)
                     df_pnl = garantir_linha_despesas_administrativas(df_pnl)
         except Exception:
-            pass  # se falhar a leitura, mantém o cálculo automático
+            pass 
 
         titulo_cards = "Principais linhas do P&L Acumulado"
         titulo_comparativo = "Realizado x Orçado acumulado por linha principal"
@@ -1662,9 +1670,6 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         labels={"Valor": "Valor", "Linha": "", "Métrica": ""},
     )
 
-    # Para evitar que rótulos de barras pequenas (ex: Provisões) se sobreponham
-    # à barra seguinte, deslocamos o texto para longe do zero quando a barra é pequena
-    # em relação à maior barra do gráfico.
     if not base_grafico.empty:
         valor_max_abs = base_grafico["Valor"].abs().max()
     else:
@@ -1723,8 +1728,6 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         val_str = formatar_moeda(row["Valor"])
 
         if pagina == "Acumulado":
-            # Calcula variação diretamente da planilha: (RC_2026 / RC_2025) - 1
-            # Busca o valor 2026 e 2025 do df_comp para este produto
             if df_comp_2025 is not None and not df_comp_2025.empty:
                 linha_norm = normalizar_texto(linha_resultado_contabil)
                 b26 = df_comp_2025[
@@ -1759,8 +1762,6 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
 
     base_produtos["Rótulo"] = base_produtos.apply(texto_barra, axis=1)
 
-    # Usa go.Bar para permitir textposition diferente por barra.
-    # Barras com valor < 20% do máximo recebem texto acima ("outside") para legibilidade.
     max_val = base_produtos["Valor"].max() if not base_produtos.empty else 1
     threshold = max_val * 0.20
 
@@ -2344,21 +2345,6 @@ def carregar_comparativo_2025(arquivo):
         except Exception:
             return pd.NA
 
-    # Mapeamento confirmado inspecionando a planilha (índices base-0):
-    #
-    # BLOCO 2026 (esquerdo, cols A-N):
-    #   Label: col 1
-    #   Banco Digital: Realizado=2, Orçado=3
-    #   Consignado:    Realizado=5, Orçado=6
-    #   Imobiliário:   Realizado=8, Orçado=9
-    #   Total:         Realizado=11, Orçado=12
-    #
-    # BLOCO 2025 (direito, cols P-AB):
-    #   Label: col 15
-    #   Banco Digital: Realizado=16, Orçado=17
-    #   Consignado:    Realizado=19, Orçado=20
-    #   Imobiliário:   Realizado=22, Orçado=23
-    #   Total:         Realizado=25, Orçado=26
     blocos_2026 = [
         {"Produto": "Consignado",  "label_col": 1,  "realizado_col": 5,  "orcado_col": 6},
         {"Produto": "Imobiliário", "label_col": 1,  "realizado_col": 8,  "orcado_col": 9},
@@ -2449,10 +2435,6 @@ def carregar_rpl_acumulado_oficial(arquivo):
     except Exception:
         data_ate = None
 
-    # Estrutura da aba:
-    # Row 3 (idx 2): produtos: BANCO DIGITAL, CONSIGNADO, IMOBILIARIO, TOTAL
-    # Row 4 (idx 3): métricas: Realizado, Orçado, Δ
-    # Cols por produto: Banco=2,3,4 | Consignado=5,6,7 | Imobiliário=8,9,10 | Total=11,12,13
     cols_produto = {
         "Consignado": (5, 6),
         "Imobiliário": (8, 9),
@@ -2460,12 +2442,6 @@ def carregar_rpl_acumulado_oficial(arquivo):
     }
     cols_para_validar = [5, 6, 8, 9, 11, 12]
 
-    # Linhas que vamos sobrescrever no dashboard com os valores oficiais.
-    # Aba P&L Acumulado é a fonte de verdade para essas linhas no acumulado:
-    # - RPL: cálculo com média ponderada de Alocação de Capital
-    # - Despesas Adm Diretas/Indiretas: pequenas diferenças vs soma mensal pura
-    # - RESULTADO ANTES IMPOSTO e CONTÁBIL: derivam das diferenças acima e precisam
-    #   ser sobrescritos para manter consistência interna entre as linhas exibidas
     linhas_para_capturar = [
         "RPL - RES. CONTÁBIL",
         "Despesas Administrativas Diretas",
@@ -2478,8 +2454,6 @@ def carregar_rpl_acumulado_oficial(arquivo):
 
     for nome_linha in linhas_para_capturar:
         nome_norm = normalizar_texto(nome_linha)
-        # Algumas linhas aparecem mais de uma vez na aba (cabeçalho duplicado).
-        # Procuramos a primeira linha com valores numéricos preenchidos.
         for idx in bruto.index:
             label = bruto.iat[idx, 1] if 1 < len(bruto.columns) else None
             if normalizar_texto(label) != nome_norm:
@@ -2518,7 +2492,6 @@ def aplicar_valores_oficiais_acumulado(df_acumulado, dados_oficiais):
 
     valores = dados_oficiais["valores"]
 
-    # Mapeia label "bonito" da linha pelo seu nome normalizado
     rotulos_por_norm = {
         normalizar_texto("RPL - RES. CONTÁBIL"): "RPL - RES. CONTÁBIL",
         normalizar_texto("Despesas Administrativas Diretas"): "Despesas Administrativas Diretas",
@@ -2527,10 +2500,8 @@ def aplicar_valores_oficiais_acumulado(df_acumulado, dados_oficiais):
         normalizar_texto("RESULTADO CONTÁBIL"): "RESULTADO CONTÁBIL",
     }
 
-    # Linhas afetadas
     linhas_norm_afetadas = set(k[0] for k in valores.keys())
 
-    # Pega ordem original de cada linha (para preservar posição na tabela)
     ordens_existentes = {}
     for ln in linhas_norm_afetadas:
         base = df_acumulado[df_acumulado["Linha_Normalizada"] == ln]
@@ -2539,7 +2510,6 @@ def aplicar_valores_oficiais_acumulado(df_acumulado, dados_oficiais):
         else:
             ordens_existentes[ln] = 9999
 
-    # Remove valores antigos (Realizado e Orçado) das linhas afetadas
     df_filtrado = df_acumulado[
         ~(df_acumulado["Linha_Normalizada"].isin(linhas_norm_afetadas)
           & df_acumulado["Métrica"].isin(["Realizado", "Orçado"]))
@@ -2619,7 +2589,6 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         "RESULTADO CONTÁBIL",
     ]
 
-    # Linhas que compõem DESPESAS TOTAIS (somadas em módulo, pois são negativas)
     componentes_desp_totais = [
         "despesas de originacao",
         "provisoes",
@@ -2638,7 +2607,6 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         total_25 = pd.NA
         total_25_acum = pd.NA
 
-        # Para cada componente, pega o primeiro valor correspondente
         soma_26 = 0.0
         soma_25 = 0.0
         soma_25a = 0.0
@@ -2691,7 +2659,6 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         delta_pct = delta_rs / abs(v25) if pd.notna(delta_rs) and v25 not in [0, 0.0] and pd.notna(v25) else pd.NA
         alcance = v26 / abs(v25_acum) if pd.notna(v25_acum) and v25_acum not in [0, 0.0] and pd.notna(v26) else pd.NA
 
-        # Linha de custo/despesa: ambos negativos → aumentar o módulo é ruim
         ambos_neg = pd.notna(v25) and pd.notna(v26) and float(v25) < 0 and float(v26) < 0
         if ambos_neg:
             delta_bad = abs(float(v26)) > abs(float(v25)) if pd.notna(delta_rs) else False
@@ -2762,8 +2729,6 @@ def tabela_html_comparativo(df):
                 if col == "Δ %" and pd.notna(valor):
                     ambos_neg = row.get("_ambos_neg", False)
                     delta_bad = row.get("_delta_bad", False)
-                    # Sinal exibido: para despesas (ambos negativos), inverter
-                    # para que "despesa cresceu" apareça como "+"
                     valor_exibir = -float(valor) if ambos_neg else float(valor)
                     sinal = "+" if valor_exibir >= 0 else "−"
                     pct = f"{abs(valor_exibir) * 100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -3332,4 +3297,3 @@ with tab_comp_2025:
 
     except Exception as erro:
         st.info(f"Não consegui carregar a aba Comparativo 2026 x 2025: {erro}")
-
