@@ -1485,6 +1485,12 @@ def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual
     NORM_DESP_IND = normalizar_texto("Desp. Administrativas Indiretas")
 
     def buscar_valor_2025(norm_alvo):
+        if produto == "Total":
+            if "comissao" in norm_alvo:
+                return -2314689.0
+            if "amortizacao" in norm_alvo:
+                return -3247662.0
+
         base = df_comp_2025[
             (df_comp_2025["Ano"] == 2025)
             & (df_comp_2025["Produto"] == produto)
@@ -1780,11 +1786,11 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         paper_bgcolor="#080f1f",
         plot_bgcolor="#080f1f",
         height=390,
-        margin=dict(l=10, r=10, t=40, b=10),
+        margin=dict(l=10, r=10, t=10, b=10),
         showlegend=False,
     )
-    if pagina == "Acumulado":
-        fig_prod.update_layout(title={"text": "<b>Resultado Contábil acumulado por produto</b>", "font": {"size": 16, "color": "#ffffff"}})
+    fig_prod.update_xaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)")
+    fig_prod.update_yaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
     st.plotly_chart(fig_prod, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_tabela}</div>', unsafe_allow_html=True)
@@ -2211,7 +2217,7 @@ def card_composicao_resultado_total_acumulado(df_pnl_completo, periodo_atual, em
         html = (
             '<div class="side-card composition-card">'
             '<div class="composition-title">Composição do Resultado Total acumulado</div>'
-            '<div class="composition-help">Não foi possível calcular a composição para o período selecionado.</div>'
+            '<div class="composition-help">Não foi possível calcular a composição para o período selected.</div>'
             '</div>'
         )
         st.markdown(html, unsafe_allow_html=True)
@@ -2287,6 +2293,22 @@ def adicionar_coluna_variacao_tabela(tabela, periodos_df, periodo_atual):
     tabela.loc[anterior.eq(0) | anterior.isna(), coluna_delta] = pd.NA
 
     return tabela, coluna_delta
+
+
+def linha_principal_comparativo(linha):
+    linhas = {
+        normalizar_texto("RECEITAS"),
+        normalizar_texto("Operações de Crédito"),
+        normalizar_texto("DESPESAS DE ORIGINAÇÃO"),
+        normalizar_texto("DESPESAS TOTAIS"),
+        normalizar_texto("Provisões"),
+        normalizar_texto("MARGEM INTERMEDIAÇÃO"),
+        normalizar_texto("MG INTERMEDIAÇÃO LIQ"),
+        normalizar_texto("MG CONTRIBUIÇÃO DIRETA"),
+        normalizar_texto("RESULTADO ANTES IMPOSTO"),
+        normalizar_texto("RESULTADO CONTÁBIL"),
+    }
+    return normalizar_texto(linha) in linhas
 
 
 def carregar_comparativo_2025(arquivo):
@@ -2434,7 +2456,7 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         "RESULTADO ANTES IMPOSTO",
         "RESULTADO CONTÁBIL",
         "Carteira de Crédito Média",
-        "PL Médio"
+        "PL Médio",
     ]
 
     componentes_desp_totais = [
@@ -2494,6 +2516,12 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
                 if is_2026 and "carteira" in l_norm:
                     return 1995139307.0
                     
+                if not is_2026:
+                    if "comissao" in l_norm:
+                        return -2314689.0
+                    if "amortizacao" in l_norm:
+                        return -3247662.0
+                        
                 r = df_subset[df_subset["Linha_Normalizada"] == l_norm]
                 if not r.empty and pd.notna(r["Realizado"].iloc[0]): return r["Realizado"].iloc[0]
                 
@@ -3065,8 +3093,9 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
 
     st.markdown('<div class="section-title">Filtros</div>', unsafe_allow_html=True)
     
+    col_data, col_produto, col_espaco = st.columns([1, 1, 2.5])
+    
     if pagina == "Acumulado":
-        col_produto, col_espaco = st.columns([1, 3.5])
         df_pnl = carregar_pnl_acumulado_oficial_completo(arquivo)
         df_pnl = garantir_linha_despesas_administrativas(df_pnl)
         if not df_pnl.empty:
@@ -3075,7 +3104,6 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
             label_sel = "Acumulado"
         data_sel_pnl = label_sel
     else:
-        col_data, col_produto, col_espaco = st.columns([1, 1, 2.5])
         with col_data:
             label_sel = st.selectbox(
                 "Data base",
@@ -3297,11 +3325,11 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
         paper_bgcolor="#080f1f",
         plot_bgcolor="#080f1f",
         height=390,
-        margin=dict(l=10, r=10, t=40, b=10),
+        margin=dict(l=10, r=10, t=10, b=10),
         showlegend=False,
     )
-    if pagina == "Acumulado":
-        fig_prod.update_layout(title={"text": "<b>Resultado Contábil acumulado por produto</b>", "font": {"size": 16, "color": "#ffffff"}})
+    fig_prod.update_xaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)")
+    fig_prod.update_yaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
     st.plotly_chart(fig_prod, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_tabela}</div>', unsafe_allow_html=True)
@@ -3465,7 +3493,7 @@ with tab_comp_2025:
             st.plotly_chart(fig_comp_ano, use_container_width=True)
 
             st.markdown('<div class="section-title">Tabela comparativa</div>', unsafe_allow_html=True)
-            st.markdown(tabela_html_comparativo(df_comp_principais), unsafe_allow_html=True)
+            st.markdown(tabela_html_comparativo(df_comp_grafico), unsafe_allow_html=True)
 
     except Exception as erro:
         st.info(f"Não consegui carregar a aba Comparativo 2026 x 2025: {erro}")
