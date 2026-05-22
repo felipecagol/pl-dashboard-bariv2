@@ -906,7 +906,6 @@ def carregar_pnl_mensal(arquivo):
 
 @st.cache_data(show_spinner=False)
 def carregar_pnl_acumulado_oficial_completo(arquivo):
-    """Carrega integralmente e de forma direta os valores oficiais da aba 'P&L Acumulado'."""
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
     except Exception:
@@ -1542,14 +1541,6 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         
         df_pnl = carregar_pnl_acumulado_oficial_completo(arquivo)
         df_pnl = garantir_linha_despesas_administrativas(df_pnl)
-        
-        if not df_pnl.empty:
-            label_sel = df_pnl["Periodo"].iloc[0]
-        else:
-            label_sel = "Acumulado"
-            
-        with col_espaco:
-            st.info(f"ℹ️ Exibindo dados extraídos diretamente da aba oficial **P&L Acumulado** ({label_sel}).")
     else:
         col_data, col_produto, col_espaco = st.columns([1, 1, 2.5])
         with col_data:
@@ -3087,6 +3078,11 @@ with tab_comp_2025:
             for col, (titulo, linha_nome) in zip(cols2, novos_cards_linha2):
                 with col:
                     linha_df = obter_linha_comparativo(df_comp_principais, linha_nome)
+                    
+                    if linha_df.empty and "Carteira" in titulo:
+                        linha_df = obter_linha_comparativo(df_comp_principais, "Carteira de Crédito Média")
+                    if linha_df.empty and "PL" in titulo:
+                        linha_df = obter_linha_comparativo(df_comp_principais, "PL Médio (Banco + Hipo)")
                         
                     if linha_df.empty:
                         card(titulo, 0, ajuda="Sem dados na base", variacao=None)
@@ -3120,7 +3116,6 @@ with tab_comp_2025:
 
             st.markdown('<div class="section-title">1Q25 x 1Q26 por linha principal</div>', unsafe_allow_html=True)
             
-            # === FILTRA CARTEIRA E PL APENAS DO GRÁFICO ===
             linhas_ocultas_grafico = ["carteira de credito media", "pl medio", "carteira de credito bruta media", "pl medio banco hipo"]
             df_comp_grafico = df_comp_principais[~df_comp_principais["Linha"].map(normalizar_texto).isin(linhas_ocultas_grafico)]
 
