@@ -1745,11 +1745,11 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         paper_bgcolor="#080f1f",
         plot_bgcolor="#080f1f",
         height=390,
-        margin=dict(l=10, r=10, t=40, b=10),
+        margin=dict(l=10, r=10, t=10, b=10),
         showlegend=False,
     )
-    if pagina == "Acumulado":
-        fig_prod.update_layout(title={"text": "<b>Resultado Contábil acumulado por produto</b>", "font": {"size": 16, "color": "#ffffff"}})
+    fig_prod.update_xaxes(showgrid=False, zeroline=False)
+    fig_prod.update_yaxes(showgrid=False, zeroline=False, tickprefix="R$ ", separatethousands=True)
     st.plotly_chart(fig_prod, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_tabela}</div>', unsafe_allow_html=True)
@@ -3053,19 +3053,19 @@ with tab_comp_2025:
                 with col:
                     linha_df = obter_linha_comparativo(df_comp_principais, linha_nome)
                     if linha_df.empty:
-                        card(titulo, 0, ajuda="Sem dados na base", variacao=None)
+                        card(titulo, 0, ajuda="", variacao=None)
                     else:
                         valor_2025 = linha_df["2025"].iloc[0]
                         valor_2026 = linha_df["2026"].iloc[0]
                         variacao = linha_df["Δ %"].iloc[0]
-                        ajuda = f"1Q26: {formatar_moeda(valor_2026)} | 1Q25: {formatar_moeda(valor_2025)}"
+                        ajuda = ""
                         cor_classe = None
                         variacao_exibir = None
                         if variacao is not None and not pd.isna(variacao) and pd.notna(valor_2026) and float(valor_2026) < 0 and float(variacao) < 0:
                             variacao_exibir = -variacao
                             cor_classe = "delta-negative"
                         card(titulo, valor_2026, ajuda=ajuda, variacao=variacao,
-                             variacao_label="Δ 1Q26 vs 1Q25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
+                             variacao_label="vs 1Q25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
 
             st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
 
@@ -3081,19 +3081,19 @@ with tab_comp_2025:
                     linha_df = obter_linha_comparativo(df_comp_principais, linha_nome)
                         
                     if linha_df.empty:
-                        card(titulo, 0, ajuda="Sem dados na base", variacao=None)
+                        card(titulo, 0, ajuda="", variacao=None)
                     else:
                         valor_2025 = linha_df["2025"].iloc[0]
                         valor_2026 = linha_df["2026"].iloc[0]
                         variacao = linha_df["Δ %"].iloc[0]
-                        ajuda = f"1Q26: {formatar_moeda(valor_2026)} | 1Q25: {formatar_moeda(valor_2025)}"
+                        ajuda = ""
                         cor_classe = None
                         variacao_exibir = None
                         if variacao is not None and not pd.isna(variacao) and pd.notna(valor_2026) and float(valor_2026) < 0 and float(variacao) < 0:
                             variacao_exibir = -variacao
                             cor_classe = "delta-negative"
                         card(titulo, valor_2026, ajuda=ajuda, variacao=variacao,
-                             variacao_label="Δ 1Q26 vs 1Q25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
+                             variacao_label="vs 1Q25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
 
             st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
 
@@ -3152,7 +3152,6 @@ with tab_comp_2025:
                 plot_bgcolor="#080f1f",
                 height=520,
                 margin=dict(l=10, r=120, t=40, b=20),
-                title={"text": "<b>1Q25 x 1Q26 por linha principal</b>", "font": {"size": 16, "color": "#ffffff"}},
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
             )
             st.plotly_chart(fig_comp_ano, use_container_width=True)
