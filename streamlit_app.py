@@ -1490,6 +1490,15 @@ def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual
             & (df_comp_2025["Produto"] == produto)
             & (df_comp_2025["Linha_Normalizada"] == norm_alvo)
         ]
+        
+        if base.empty:
+            if "comissao" in norm_alvo:
+                base = df_comp_2025[(df_comp_2025["Ano"] == 2025) & (df_comp_2025["Produto"] == produto) & (df_comp_2025["Linha_Normalizada"].str.contains("comissao", na=False))]
+            elif "amortizacao" in norm_alvo:
+                base = df_comp_2025[(df_comp_2025["Ano"] == 2025) & (df_comp_2025["Produto"] == produto) & (df_comp_2025["Linha_Normalizada"].str.contains("amortizacao", na=False))]
+            elif "impostos diretos" in norm_alvo:
+                base = df_comp_2025[(df_comp_2025["Ano"] == 2025) & (df_comp_2025["Produto"] == produto) & (df_comp_2025["Linha_Normalizada"].str.contains("impostos diretos", na=False))]
+                
         if base.empty:
             return None
         v = pd.to_numeric(base["Realizado"].iloc[0], errors="coerce")
@@ -1560,12 +1569,13 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
             data_sel_pnl = label_para_periodo[label_sel] if label_para_periodo and label_sel in label_para_periodo else label_sel
         df_pnl = df_pnl_completo[df_pnl_completo["Periodo"] == data_sel_pnl].copy()
 
-    produto_sel_pnl = st.selectbox(
-        "Produto",
-        ["Consignado", "Imobiliário", "Total"],
-        index=2,
-        key=f"produto_pnl_{pagina.lower()}",
-    )
+    with col_produto:
+        produto_sel_pnl = st.selectbox(
+            "Produto",
+            ["Consignado", "Imobiliário", "Total"],
+            index=2,
+            key=f"produto_pnl_{pagina.lower()}",
+        )
 
     if pagina == "Acumulado":
         titulo_cards = "Principais linhas do P&L Acumulado"
@@ -1652,6 +1662,11 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         barmode="group",
         labels={"Valor": "Valor", "Linha": "", "Métrica": ""},
     )
+
+    if not base_grafico.empty:
+        valor_max_abs = base_grafico["Valor"].abs().max()
+    else:
+        valor_max_abs = 1
 
     fig_comp.update_traces(
         texttemplate="<b>%{text}</b>",
@@ -1765,11 +1780,11 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         paper_bgcolor="#080f1f",
         plot_bgcolor="#080f1f",
         height=390,
-        margin=dict(l=10, r=10, t=10, b=10),
+        margin=dict(l=10, r=10, t=40, b=10),
         showlegend=False,
     )
-    fig_prod.update_xaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)")
-    fig_prod.update_yaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
+    if pagina == "Acumulado":
+        fig_prod.update_layout(title={"text": "<b>Resultado Contábil acumulado por produto</b>", "font": {"size": 16, "color": "#ffffff"}})
     st.plotly_chart(fig_prod, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_tabela}</div>', unsafe_allow_html=True)
@@ -2274,22 +2289,6 @@ def adicionar_coluna_variacao_tabela(tabela, periodos_df, periodo_atual):
     return tabela, coluna_delta
 
 
-def linha_principal_comparativo(linha):
-    linhas = {
-        normalizar_texto("RECEITAS"),
-        normalizar_texto("Operações de Crédito"),
-        normalizar_texto("DESPESAS DE ORIGINAÇÃO"),
-        normalizar_texto("DESPESAS TOTAIS"),
-        normalizar_texto("Provisões"),
-        normalizar_texto("MARGEM INTERMEDIAÇÃO"),
-        normalizar_texto("MG INTERMEDIAÇÃO LIQ"),
-        normalizar_texto("MG CONTRIBUIÇÃO DIRETA"),
-        normalizar_texto("RESULTADO ANTES IMPOSTO"),
-        normalizar_texto("RESULTADO CONTÁBIL"),
-    }
-    return normalizar_texto(linha) in linhas
-
-
 def carregar_comparativo_2025(arquivo):
     try:
         bruto = pd.read_excel(arquivo, sheet_name="Comparativo 2026 x 2025", header=None, engine="openpyxl")
@@ -2435,10 +2434,7 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         "RESULTADO ANTES IMPOSTO",
         "RESULTADO CONTÁBIL",
         "Carteira de Crédito Média",
-        "PL Médio",
-        "Impostos Diretos",
-        "Comissão (Apoio - Comercial - Mídia Paga)",
-        "Amortização "
+        "PL Médio"
     ]
 
     componentes_desp_totais = [
@@ -2828,7 +2824,7 @@ def montar_tabela_empresas_e_total(df):
     return tabela
 
 
-st.sidebar.title("Filtros")
+st.sidebar.title("Configurações")
 arquivo_local = Path(ARQUIVO_PADRAO)
 upload = st.sidebar.file_uploader("Atualizar base manualmente", type=["xlsx"])
 
@@ -2862,15 +2858,6 @@ periodos_disponiveis = (
 )
 
 periodo_padrao = len(periodos_disponiveis) - 1
-
-st.sidebar.markdown(
-    """
-    <div class="note-box">
-        Exibindo somente dados a partir de <b>jan/2026</b>.
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 st.markdown('<div class="dash-title">Dashboard P&L 2026</div>', unsafe_allow_html=True)
 st.markdown('<div class="dash-subtitle">Resultados consolidados, evolução histórica e abertura por empresa.</div>', unsafe_allow_html=True)
@@ -3049,9 +3036,285 @@ with tab_resultados:
 
     st.markdown(tabela_html(tabela_formatada, tabela_valores, coluna_delta=coluna_delta), unsafe_allow_html=True)
 
+def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None):
+    periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)
+
+    if pagina == "Acumulado":
+        meses_fim_trimestre = {3, 6, 9, 12}
+        periodos_pnl = [p for p in periodos_pnl if p["Data"] is not None and p["Data"].month in meses_fim_trimestre]
+        if not periodos_pnl:
+            periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)
+
+        mes_para_trimestre = {3: "1Q", 6: "2Q", 9: "3Q", 12: "4Q"}
+        label_para_periodo = {}
+        lista_labels_trimestre = []
+        for p in periodos_pnl:
+            if p["Data"] is not None:
+                tri = mes_para_trimestre.get(p["Data"].month, p["Período"])
+                ano = p["Data"].year
+                label = f"{tri} - {ano}"
+            else:
+                label = p["Período"]
+            label_para_periodo[label] = p["Período"]
+            lista_labels_trimestre.append(label)
+
+        lista_periodos_pnl = lista_labels_trimestre
+    else:
+        lista_periodos_pnl = [item["Período"] for item in periodos_pnl]
+        label_para_periodo = None
+
+    st.markdown('<div class="section-title">Filtros</div>', unsafe_allow_html=True)
+    
+    if pagina == "Acumulado":
+        col_produto, col_espaco = st.columns([1, 3.5])
+        df_pnl = carregar_pnl_acumulado_oficial_completo(arquivo)
+        df_pnl = garantir_linha_despesas_administrativas(df_pnl)
+        if not df_pnl.empty:
+            label_sel = df_pnl["Periodo"].iloc[0]
+        else:
+            label_sel = "Acumulado"
+        data_sel_pnl = label_sel
+    else:
+        col_data, col_produto, col_espaco = st.columns([1, 1, 2.5])
+        with col_data:
+            label_sel = st.selectbox(
+                "Data base",
+                lista_periodos_pnl,
+                index=len(lista_periodos_pnl) - 1,
+                key=f"data_pnl_{pagina.lower()}",
+            )
+            data_sel_pnl = label_para_periodo[label_sel] if label_para_periodo and label_sel in label_para_periodo else label_sel
+        df_pnl = df_pnl_completo[df_pnl_completo["Periodo"] == data_sel_pnl].copy()
+
+    with col_produto:
+        produto_sel_pnl = st.selectbox(
+            "Produto",
+            ["Consignado", "Imobiliário", "Total"],
+            index=2,
+            key=f"produto_pnl_{pagina.lower()}",
+        )
+
+    if pagina == "Acumulado":
+        titulo_cards = "Principais linhas do P&L Acumulado"
+        titulo_comparativo = "Realizado x Orçado acumulado por linha principal"
+        titulo_resultado_produto = "Resultado Contábil acumulado por produto"
+        titulo_tabela = "Resumo acumulado das linhas principais por produto"
+    else:
+        titulo_cards = "Principais linhas do P&L Mensal"
+        titulo_comparativo = "Realizado x Orçado por linha principal"
+        titulo_resultado_produto = "Resultado Contábil por produto"
+        titulo_tabela = "Resumo das linhas principais por produto"
+
+    linhas_principais = obter_linhas_principais_pnl(df_pnl)
+
+    st.markdown(f'<div class="section-title">{titulo_cards}</div>', unsafe_allow_html=True)
+
+    ordem_exibicao_cards = [
+        "RECEITAS", "DESPESAS DE ORIGINAÇÃO", "MARGEM INTERMEDIAÇÃO",
+        "Provisões", "MG INTERMEDIAÇÃO LIQ", "Despesas Administrativas",
+        "Impostos Diretos", "Comissão (Apoio - Comercial - Mídia Paga)", "Amortização ",
+        "RESULTADO ANTES IMPOSTO", "Impostos (IR/CSLL)", "RESULTADO CONTÁBIL"
+    ]
+
+    linhas_mapeadas = []
+    for ref_nome in ordem_exibicao_cards:
+        for l in linhas_principais:
+            if normalizar_texto(ref_nome) in normalizar_texto(l):
+                if l not in linhas_mapeadas:
+                    linhas_mapeadas.append(l)
+                break
+
+    for l in linhas_principais:
+        if l not in linhas_mapeadas:
+            linhas_mapeadas.append(l)
+
+    for inicio in range(0, len(linhas_mapeadas), 3):
+        if inicio > 0:
+            st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
+
+        cols_cards = st.columns(3)
+        for col_card, linha in zip(cols_cards, linhas_mapeadas[inicio:inicio + 3]):
+            realizado = valor_pnl(df_pnl, produto_sel_pnl, linha, "Realizado")
+
+            if pagina == "Acumulado":
+                variacao = variacao_pnl_acumulado_vs_2025(df_comp_2025, produto_sel_pnl, linha, realizado)
+                variacao_label = "vs 1Q25"
+            else:
+                variacao = variacao_pnl_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
+                variacao_label = "Δ mês anterior"
+
+            cor_classe = None
+            variacao_exibir = None
+            if variacao is not None and not pd.isna(variacao) and realizado < 0:
+                variacao_exibir = -variacao
+                cor_classe = "delta-negative" if float(variacao) < 0 else "delta-positive"
+
+            with col_card:
+                card_pnl(linha.replace("*","").strip(), realizado, variacao=variacao, variacao_label=variacao_label,
+                         cor_classe=cor_classe, variacao_exibir=variacao_exibir)
+
+    st.markdown(f'<div class="section-title">{titulo_comparativo}</div>', unsafe_allow_html=True)
+
+    novas_medidas = ["impostos diretos", "comissao", "amortizacao"]
+    linhas_grafico_pnl = [l for l in linhas_mapeadas if not any(m in normalizar_texto(l) for m in novas_medidas)]
+
+    base_grafico = df_pnl[
+        (df_pnl["Produto"] == produto_sel_pnl)
+        & (df_pnl["Linha"].isin(linhas_grafico_pnl))
+        & (df_pnl["Métrica"].isin(["Realizado", "Orçado"]))
+    ].copy()
+
+    ordem_linhas = {linha: i for i, linha in enumerate(linhas_grafico_pnl)}
+    base_grafico["Ordem"] = base_grafico["Linha"].map(ordem_linhas)
+    base_grafico = base_grafico.sort_values("Ordem", ascending=False)
+    base_grafico["Rótulo"] = base_grafico["Valor"].map(formatar_moeda_curta)
+
+    fig_comp = px.bar(
+        base_grafico,
+        x="Valor",
+        y="Linha",
+        color="Métrica",
+        text="Rótulo",
+        orientation="h",
+        barmode="group",
+        labels={"Valor": "Valor", "Linha": "", "Métrica": ""},
+    )
+
+    if not base_grafico.empty:
+        valor_max_abs = base_grafico["Valor"].abs().max()
+    else:
+        valor_max_abs = 1
+
+    fig_comp.update_traces(
+        texttemplate="<b>%{text}</b>",
+        textposition="outside",
+        textfont=dict(size=14, family="Arial Black", color="#FFFFFF"),
+        cliponaxis=False,
+        constraintext="none",
+    )
+    fig_comp.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="#080f1f",
+        plot_bgcolor="#080f1f",
+        height=640,
+        margin=dict(l=10, r=140, t=20, b=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
+        uniformtext_minsize=11,
+        uniformtext_mode="show",
+        bargap=0.30,
+        bargroupgap=0.18,
+    )
+
+    if not base_grafico.empty:
+        x_min = base_grafico["Valor"].min()
+        x_max = base_grafico["Valor"].max()
+        x_pad = max((x_max - x_min) * 0.32, 1)
+        fig_comp.update_xaxes(
+            showgrid=False,
+            zeroline=False,
+            gridcolor="rgba(0,0,0,0)",
+            tickprefix="R$ ",
+            separatethousands=True,
+            range=[x_min - x_pad, x_max + x_pad],
+        )
+    else:
+        fig_comp.update_xaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
+
+    fig_comp.update_yaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickfont=dict(size=12, color="#ffffff"))
+    st.plotly_chart(fig_comp, use_container_width=True)
+
+    st.markdown(f'<div class="section-title">{titulo_resultado_produto}</div>', unsafe_allow_html=True)
+    
+    linha_resultado_contabil = next(
+        (linha for linha in linhas_mapeadas if normalizar_texto(linha) in ["resultado contabil", "resultado contábil"]),
+        linhas_mapeadas[-1] if len(linhas_mapeadas) > 0 else None
+    )
+
+    base_produtos = df_pnl[
+        (df_pnl["Linha"] == linha_resultado_contabil)
+        & (df_pnl["Produto"].isin(["Consignado", "Imobiliário", "Total"]))
+        & (df_pnl["Métrica"] == "Realizado")
+    ].copy()
+
+    def texto_barra(row):
+        val_str = formatar_moeda(row["Valor"])
+
+        if pagina == "Acumulado":
+            if df_comp_2025 is not None and not df_comp_2025.empty:
+                linha_norm = normalizar_texto(linha_resultado_contabil)
+                b26 = df_comp_2025[
+                    (df_comp_2025["Ano"] == 2026)
+                    & (df_comp_2025["Produto"] == row["Produto"])
+                    & (df_comp_2025["Linha_Normalizada"] == linha_norm)
+                ]
+                b25 = df_comp_2025[
+                    (df_comp_2025["Ano"] == 2025)
+                    & (df_comp_2025["Produto"] == row["Produto"])
+                    & (df_comp_2025["Linha_Normalizada"] == linha_norm)
+                ]
+                v26 = pd.to_numeric(b26["Realizado"].iloc[0], errors="coerce") if not b26.empty else None
+                v25 = pd.to_numeric(b25["Realizado"].iloc[0], errors="coerce") if not b25.empty else None
+                if v26 is not None and v25 is not None and pd.notna(v26) and pd.notna(v25) and v25 != 0:
+                    var = (float(v26) / float(v25)) - 1
+                else:
+                    var = None
+            else:
+                var = None
+            label_var = "vs 1Q25"
+        else:
+            var = variacao_pnl_mes_anterior(df_pnl_completo, row["Produto"], linha_resultado_contabil, data_sel_pnl)
+            label_var = "vs mês ant."
+
+        if var is None or pd.isna(var):
+            return val_str
+
+        sinal = "+" if float(var) >= 0 else "−"
+        pct = f"{abs(float(var)) * 100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"{val_str}<br><span style='font-size:14px; font-weight: bold; color: #ffffff;'>{sinal}{pct} {label_var}</span>"
+
+    base_produtos["Rótulo"] = base_produtos.apply(texto_barra, axis=1)
+
+    max_val = base_produtos["Valor"].max() if not base_produtos.empty else 1
+    threshold = max_val * 0.20
+
+    text_positions = [
+        "outside" if row["Valor"] < threshold else "inside"
+        for _, row in base_produtos.iterrows()
+    ]
+
+    fig_prod = go.Figure(go.Bar(
+        x=base_produtos["Produto"],
+        y=base_produtos["Valor"],
+        text=base_produtos["Rótulo"],
+        textposition=text_positions,
+        textfont=dict(size=16, family="Arial Black", color="#FFFFFF"),
+        insidetextanchor="middle",
+        texttemplate="%{text}",
+        marker_color="#1d6ff2",
+    ))
+    fig_prod.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="#080f1f",
+        plot_bgcolor="#080f1f",
+        height=390,
+        margin=dict(l=10, r=10, t=40, b=10),
+        showlegend=False,
+    )
+    if pagina == "Acumulado":
+        fig_prod.update_layout(title={"text": "<b>Resultado Contábil acumulado por produto</b>", "font": {"size": 16, "color": "#ffffff"}})
+    st.plotly_chart(fig_prod, use_container_width=True)
+
+    st.markdown(f'<div class="section-title">{titulo_tabela}</div>', unsafe_allow_html=True)
+    linhas_tabela = obter_linhas_tabela_pnl(df_pnl)
+    matriz_pnl, produtos_matriz, metricas_matriz = montar_matriz_pnl_excel(df_pnl, linhas_tabela)
+    st.markdown(
+        tabela_html_pnl_matriz(matriz_pnl, produtos_matriz, metricas_matriz),
+        unsafe_allow_html=True,
+    )
+
 with tab_pnl_mensal:
     if erro_pnl_global is None and not df_pnl_completo_global.empty:
-        render_pnl_page(df_pnl_completo_global, arquivo, pagina="Mensal")
+        _render_pnl_engine(df_pnl_completo_global, arquivo, pagina="Mensal")
     else:
         st.info(f"Não consegui carregar a aba P&L Mensal: {erro_pnl_global}")
 
@@ -3061,13 +3324,22 @@ with tab_pnl_acum:
             df_comp_para_acum = carregar_comparativo_2025(arquivo)
         except Exception:
             df_comp_para_acum = None
-        render_pnl_page(df_pnl_completo_global, arquivo, pagina="Acumulado", df_comp_2025=df_comp_para_acum)
+        _render_pnl_engine(df_pnl_completo_global, arquivo, pagina="Acumulado", df_comp_2025=df_comp_para_acum)
     else:
         st.info(f"Não consegui carregar a aba P&L Acumulado: {erro_pnl_global}")
 
 with tab_comp_2025:
     try:
         df_comp = carregar_comparativo_2025(arquivo)
+        
+        if df_comp is not None and not df_comp.empty:
+            df_comp.loc[
+                (df_comp["Ano"] == 2026) & 
+                (df_comp["Produto"] == "Total") & 
+                (df_comp["Linha_Normalizada"].str.contains("carteira", na=False)), 
+                "Realizado"
+            ] = 1995139307.0
+            
         df_2025_acumulado = carregar_2025_acumulado(arquivo)
         df_comp_principais = montar_comparativo_principais(df_comp, df_2025_acumulado)
 
