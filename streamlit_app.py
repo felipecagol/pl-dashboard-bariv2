@@ -906,6 +906,7 @@ def carregar_pnl_mensal(arquivo):
 
 @st.cache_data(show_spinner=False)
 def carregar_pnl_acumulado_oficial_completo(arquivo):
+    """Carrega integralmente e de forma direta os valores oficiais da aba 'P&L Acumulado'."""
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
     except Exception:
@@ -3118,7 +3119,12 @@ with tab_comp_2025:
                     st.info("Não foi possível calcular o alcance do Resultado Contábil com a base atual.")
 
             st.markdown('<div class="section-title">1Q25 x 1Q26 por linha principal</div>', unsafe_allow_html=True)
-            base_long = df_comp_principais.melt(
+            
+            # === FILTRA CARTEIRA E PL APENAS DO GRÁFICO ===
+            linhas_ocultas_grafico = ["carteira de credito media", "pl medio", "carteira de credito bruta media", "pl medio banco hipo"]
+            df_comp_grafico = df_comp_principais[~df_comp_principais["Linha"].map(normalizar_texto).isin(linhas_ocultas_grafico)]
+
+            base_long = df_comp_grafico.melt(
                 id_vars=["Linha", "Ordem"],
                 value_vars=["2025", "2026"],
                 var_name="Ano",
