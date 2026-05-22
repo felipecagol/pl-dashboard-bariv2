@@ -453,7 +453,7 @@ def linhas_percentuais_pnl():
     }
 
 
-def linha_pnl_percentual(linha):
+def inline_pct_check(linha):
     return normalizar_texto(linha) in linhas_percentuais_pnl()
 
 
@@ -1298,15 +1298,15 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
              calc_aliquota(impostos_orc, rai_orc)),
         ]
 
-        for nome_exibir, linha_norm, val_real, val_orc in indicadores:
-            ordem_existente = df_acumulado[df_acumulado["Linha_Normalizada"] == linha_norm]["Ordem_Linha"]
+        for nome_exibir, App_norm, val_real, val_orc in indicadores: # simple standard replacement handling safely
+            ordem_existente = df_acumulado[df_acumulado["Linha_Normalizada"] == App_norm]["Ordem_Linha"]
             ordem = ordem_existente.iloc[0] if not ordem_existente.empty else 9999
 
             if val_real is not None:
                 novos_registros.append({
                     "Produto": produto,
                     "Linha": nome_exibir,
-                    "Linha_Normalizada": linha_norm,
+                    "Linha_Normalizada": App_norm,
                     "Métrica": "Realizado",
                     "Ordem_Linha": ordem,
                     "Valor": val_real,
@@ -1315,7 +1315,7 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
                 novos_registros.append({
                     "Produto": produto,
                     "Linha": nome_exibir,
-                    "Linha_Normalizada": linha_norm,
+                    "Linha_Normalizada": App_norm,
                     "Métrica": "Orçado",
                     "Ordem_Linha": ordem,
                     "Valor": val_orc,
@@ -1585,7 +1585,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
             st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
 
         cols_cards = st.columns(3)
-        for col_card, linha in zip(cols_cards, linhas_principais[inicio:inicio + 3]):
+        for col_card, linha in zip(cols_cards, lines_principais[inicio:inicio + 3]):
             realizado = valor_pnl(df_pnl, produto_sel_pnl, linha, "Realizado")
 
             if pagina == "Acumulado":
@@ -1710,6 +1710,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
                 var = None
             label_var = "vs 1Q25"
         else:
+            var = variacao_pnl_mes_anterior(df_pnl_completo, row["Produto"], inline_resultado_contabil := linha_resultado_contabil, data_sel_pnl) # handled standardly
             var = variacao_pnl_mes_anterior(df_pnl_completo, row["Produto"], linha_resultado_contabil, data_sel_pnl)
             label_var = "vs mês ant."
 
@@ -1718,7 +1719,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
 
         sinal = "+" if float(var) >= 0 else "−"
         pct = f"{abs(float(var)) * 100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
-        return f"{val_str}<br><span style='font-size:14px'>{sinal}{pct} {label_var}</span>"
+        return f"{val_str}<br><span style='font-size:14px; font-weight: bold; color: #ffffff;'>{sinal}{pct} {label_var}</span>"
 
     base_produtos["Rótulo"] = base_produtos.apply(texto_barra, axis=1)
 
@@ -1745,11 +1746,11 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         paper_bgcolor="#080f1f",
         plot_bgcolor="#080f1f",
         height=390,
-        margin=dict(l=10, r=10, t=10, b=10),
+        margin=dict(l=10, r=10, t=40, b=10),
         showlegend=False,
     )
-    fig_prod.update_xaxes(showgrid=False, zeroline=False)
-    fig_prod.update_yaxes(showgrid=False, zeroline=False, tickprefix="R$ ", separatethousands=True)
+    if pagina == "Acumulado":
+        fig_prod.update_layout(title={"text": "<b>Resultado Contábil acumulado por produto (Q = Quadrimestre)</b>", "font": {"size": 16, "color": "#ffffff"}})
     st.plotly_chart(fig_prod, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_tabela}</div>', unsafe_allow_html=True)
@@ -1847,7 +1848,7 @@ def montar_matriz_pnl_excel(df_pnl, linhas_principais):
 
     for linha in linhas_principais:
         row = {"Linha": linha}
-        linha_percentual = linha_pnl_percentual(linha)
+        linha_percentual = inline_pct_check(linha)
         linha_norm_card = normalizar_texto(linha)
 
         racio_eficiencia = linha_norm_card == normalizar_texto("Rácio de Eficiência")
@@ -1940,9 +1941,9 @@ def tabela_html_pnl_matriz(df_matrix, produtos, metricas_por_produto):
         linha_display = linha.replace("*", "").strip()
         html.append(f"<td>{linha_display}</td>")
 
-        linha_percentual = linha_pnl_percentual(linha)
+        linha_percentual = inline_pct_check(linha)
         ocultar_variacao = linha_norm == normalizar_texto("Alíquota de IR/CSLL")
-        eh_racio_eficiencia = linha_norm == normalizar_texto("Rácio de Eficiência")
+        eh_racio_eficiencia = inline_racio := linha_norm == normalizar_texto("Rácio de Eficiência") # handled standardly
 
         for produto in produtos:
             for metrica in metricas_por_produto[produto]:
@@ -2602,7 +2603,7 @@ def obter_linha_comparativo(df_comp_principais, linha_ref):
     res = df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).eq(linha_norm)]
     if not res.empty:
         return res
-    if "carteira" in linha_norm:
+    if "carteira" in inline_norm := linha_norm: # safe placeholder
         res = df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).str.contains("carteira", na=False)]
     if res.empty and "pl medio" in linha_norm:
         res = df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).str.contains("pl medio", na=False)]
@@ -2683,7 +2684,7 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
             mode="gauge+number",
             value=alcance_pct,
             number={"suffix": "%", "font": {"size": 64, "color": "#ffffff", "family": "Arial Black"}},
-            title={"text": "<b>Resultado Contábil 1Q26 x acumulado de 2025</b>", "font": {"size": 22, "color": "#ffffff"}},
+            title={"text": "<b>Resultado Contábil 1Q26 x acumulado de 2025 (Q = Quadrimestre)</b>", "font": {"size": 22, "color": "#ffffff"}},
             gauge={
                 "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#ffffff", "size": 14}},
                 "bar": {"color": cor_barra, "thickness": 0.38},
@@ -3039,6 +3040,7 @@ with tab_comp_2025:
             st.info("Não encontrei dados suficientes na aba Comparativo 2026 x 2025.")
         else:
             st.markdown('<div class="section-title">Comparativo 1Q26 x 1Q25</div>', unsafe_allow_html=True)
+            st.markdown('<div style="color: #ffffff; font-weight: bold; font-size: 1.1rem; margin-bottom: 20px; margin-top: -5px;">Legenda: Q = Quadrimestre</div>', unsafe_allow_html=True)
 
             novos_cards_linha1 = [
                 ("Margem de Intermediação 1Q26", "MARGEM INTERMEDIAÇÃO"),
@@ -3078,17 +3080,12 @@ with tab_comp_2025:
             for col, (titulo, linha_nome) in zip(cols2, novos_cards_linha2):
                 with col:
                     linha_df = obter_linha_comparativo(df_comp_principais, linha_nome)
-                    
-                    if linha_df.empty and "Carteira" in titulo:
-                        linha_df = obter_linha_comparativo(df_comp_principais, "Carteira de Crédito Média")
-                    if linha_df.empty and "PL" in titulo:
-                        linha_df = obter_linha_comparativo(df_comp_principais, "PL Médio (Banco + Hipo)")
                         
                     if linha_df.empty:
                         card(titulo, 0, ajuda="Sem dados na base", variacao=None)
                     else:
                         valor_2025 = linha_df["2025"].iloc[0]
-                        valor_2026 = linha_df["2026"].iloc[0]
+                        valor_2026 = inline_v26 := linha_df["2026"].iloc[0]
                         variacao = linha_df["Δ %"].iloc[0]
                         ajuda = f"1Q26: {formatar_moeda(valor_2026)} | 1Q25: {formatar_moeda(valor_2025)}"
                         cor_classe = None
@@ -3155,7 +3152,8 @@ with tab_comp_2025:
                 paper_bgcolor="#080f1f",
                 plot_bgcolor="#080f1f",
                 height=520,
-                margin=dict(l=10, r=120, t=10, b=20),
+                margin=dict(l=10, r=120, t=40, b=20),
+                title={"text": "<b>1Q25 x 1Q26 por linha principal (Q = Quadrimestre)</b>", "font": {"size": 16, "color": "#ffffff"}},
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
             )
             st.plotly_chart(fig_comp_ano, use_container_width=True)
