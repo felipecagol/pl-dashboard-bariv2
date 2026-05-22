@@ -1745,11 +1745,11 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         paper_bgcolor="#080f1f",
         plot_bgcolor="#080f1f",
         height=390,
-        margin=dict(l=10, r=10, t=10, b=10),
+        margin=dict(l=10, r=10, t=40, b=10),
         showlegend=False,
     )
-    fig_prod.update_xaxes(showgrid=False, zeroline=False)
-    fig_prod.update_yaxes(showgrid=False, zeroline=False, tickprefix="R$ ", separatethousands=True)
+    if pagina == "Acumulado":
+        fig_prod.update_layout(title={"text": "<b>Resultado Contábil acumulado por produto</b>", "font": {"size": 16, "color": "#ffffff"}})
     st.plotly_chart(fig_prod, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_tabela}</div>', unsafe_allow_html=True)
@@ -3152,7 +3152,7 @@ with tab_comp_2025:
                 plot_bgcolor="#080f1f",
                 height=520,
                 margin=dict(l=10, r=120, t=40, b=20),
-                title={"text": "<b>1Q25 x 1Q26 por linha principal (Q = Quadrimestre)</b>", "font": {"size": 16, "color": "#ffffff"}},
+                title={"text": "<b>1Q25 x 1Q26 por linha principal</b>", "font": {"size": 16, "color": "#ffffff"}},
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
             )
             st.plotly_chart(fig_comp_ano, use_container_width=True)
