@@ -1035,17 +1035,16 @@ def obter_linhas_tabela_pnl(df_pnl):
 
 
 def obter_linhas_principais_pnl(df_pnl):
-    # === ADICIONADAS AS TRÊS NOVAS LINHAS PARA OS CARDS DO TOPO ===
     linhas_desejadas = [
-        "Impostos Diretos",
-        "Comissão (Apoio - Comercial - Mídia Paga)",
-        "Amortização ",
         "RECEITAS",
         "DESPESAS DE ORIGINAÇÃO",
         "MARGEM INTERMEDIAÇÃO",
         "Provisões",
         "MG INTERMEDIAÇÃO LIQ",
-        "Despesas Administrativas",  
+        "Despesas Administrativas",
+        "Impostos Diretos",
+        "Comissão (Apoio - Comercial - Mídia Paga)",
+        "Amortização ",
         "RESULTADO ANTES IMPOSTO",
         "Impostos (IR/CSLL)",
         "RESULTADO CONTÁBIL",
@@ -1493,6 +1492,14 @@ def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual
             & (df_comp_2025["Linha_Normalizada"] == norm_alvo)
         ]
         if base.empty:
+            if "comissao" in norm_alvo:
+                base = df_comp_2025[(df_comp_2025["Ano"] == 2025) & (df_comp_2025["Produto"] == produto) & (df_comp_2025["Linha_Normalizada"].str.contains("comissao", na=False))]
+            elif "amortizacao" in norm_alvo:
+                base = df_comp_2025[(df_comp_2025["Ano"] == 2025) & (df_comp_2025["Produto"] == produto) & (df_comp_2025["Linha_Normalizada"].str.contains("amortizacao", na=False))]
+            elif "impostos diretos" in norm_alvo:
+                base = df_comp_2025[(df_comp_2025["Ano"] == 2025) & (df_comp_2025["Produto"] == produto) & (df_comp_2025["Linha_Normalizada"].str.contains("impostos diretos", na=False))]
+                
+        if base.empty:
             return None
         v = pd.to_numeric(base["Realizado"].iloc[0], errors="coerce")
         return float(v) if pd.notna(v) else None
@@ -1612,9 +1619,16 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
 
     st.markdown(f'<div class="section-title">{titulo_comparativo}</div>', unsafe_allow_html=True)
 
+    linhas_ocultas_grafico_cards = [
+        "Impostos Diretos",
+        "Comissão (Apoio - Comercial - Mídia Paga)",
+        "Amortização "
+    ]
+    linhas_grafico = [l for l in linhas_principais if normalizar_texto(l) not in [normalizar_texto(x) for x in linhas_ocultas_grafico_cards]]
+
     base_grafico = df_pnl[
         (df_pnl["Produto"] == produto_sel_pnl)
-        & (df_pnl["Linha"].isin(linhas_principais))
+        & (df_pnl["Linha"].isin(linhas_grafico))
         & (df_pnl["Métrica"].isin(["Realizado", "Orçado"]))
     ].copy()
 
@@ -1667,14 +1681,15 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         fig_comp.update_xaxes(
             showgrid=False,
             zeroline=False,
+            gridcolor="rgba(0,0,0,0)",
             tickprefix="R$ ",
             separatethousands=True,
             range=[x_min - x_pad, x_max + x_pad],
         )
     else:
-        fig_comp.update_xaxes(showgrid=False, zeroline=False, tickprefix="R$ ", separatethousands=True)
+        fig_comp.update_xaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
 
-    fig_comp.update_yaxes(showgrid=False, zeroline=False, tickfont=dict(size=12, color="#ffffff"))
+    fig_comp.update_yaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickfont=dict(size=12, color="#ffffff"))
     st.plotly_chart(fig_comp, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_resultado_produto}</div>', unsafe_allow_html=True)
@@ -1750,11 +1765,11 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         paper_bgcolor="#080f1f",
         plot_bgcolor="#080f1f",
         height=390,
-        margin=dict(l=10, r=10, t=40, b=10),
+        margin=dict(l=10, r=10, t=10, b=10),
         showlegend=False,
     )
-    if pagina == "Acumulado":
-        fig_prod.update_layout(title={"text": "<b>Resultado Contábil acumulado por produto</b>", "font": {"size": 16, "color": "#ffffff"}})
+    fig_prod.update_xaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)")
+    fig_prod.update_yaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
     st.plotly_chart(fig_prod, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_tabela}</div>', unsafe_allow_html=True)
