@@ -1534,14 +1534,14 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         if not periodos_pnl:
             periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)
 
-        mes_para_trimestre = {3: "1Q", 6: "2Q", 9: "3Q", 12: "4Q"}
+        mes_para_trimestre = {3: "1º Quad.", 6: "2º Quad.", 9: "3º Quad.", 12: "4º Quad."}
         label_para_periodo = {}
         lista_labels_trimestre = []
         for p in periodos_pnl:
             if p["Data"] is not None:
                 tri = mes_para_trimestre.get(p["Data"].month, p["Período"])
-                ano = p["Data"].year
-                label = f"{tri} - {ano}"
+                ano = str(p["Data"].year)[-2:]
+                label = f"{tri} {ano}"
             else:
                 label = p["Período"]
             label_para_periodo[label] = p["Período"]
@@ -1627,7 +1627,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
 
             if pagina == "Acumulado":
                 variacao = variacao_pnl_acumulado_vs_2025(df_comp_2025, produto_sel_pnl, linha, realizado)
-                variacao_label = "vs 1Q25"
+                variacao_label = "vs 1º Quad. 25"
             else:
                 variacao = variacao_pnl_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
                 variacao_label = "Δ mês anterior"
@@ -1749,7 +1749,7 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
                     var = None
             else:
                 var = None
-            label_var = "vs 1Q25"
+            label_var = "vs 1º Quad. 25"
         else:
             var = variacao_pnl_mes_anterior(df_pnl_completo, row["Produto"], linha_resultado_contabil, data_sel_pnl)
             label_var = "vs mês ant."
@@ -1789,8 +1789,8 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         margin=dict(l=10, r=10, t=10, b=10),
         showlegend=False,
     )
-    fig_prod.update_xaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)")
-    fig_prod.update_yaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
+    if pagina == "Acumulado":
+        fig_prod.update_layout(title={"text": "<b>Resultado Contábil acumulado por produto</b>", "font": {"size": 16, "color": "#ffffff"}})
     st.plotly_chart(fig_prod, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_tabela}</div>', unsafe_allow_html=True)
@@ -2217,7 +2217,7 @@ def card_composicao_resultado_total_acumulado(df_pnl_completo, periodo_atual, em
         html = (
             '<div class="side-card composition-card">'
             '<div class="composition-title">Composição do Resultado Total acumulado</div>'
-            '<div class="composition-help">Não foi possível calcular a composição para o período selected.</div>'
+            '<div class="composition-help">Não foi possível calcular a composição para o período selecionado.</div>'
             '</div>'
         )
         st.markdown(html, unsafe_allow_html=True)
@@ -2293,22 +2293,6 @@ def adicionar_coluna_variacao_tabela(tabela, periodos_df, periodo_atual):
     tabela.loc[anterior.eq(0) | anterior.isna(), coluna_delta] = pd.NA
 
     return tabela, coluna_delta
-
-
-def linha_principal_comparativo(linha):
-    linhas = {
-        normalizar_texto("RECEITAS"),
-        normalizar_texto("Operações de Crédito"),
-        normalizar_texto("DESPESAS DE ORIGINAÇÃO"),
-        normalizar_texto("DESPESAS TOTAIS"),
-        normalizar_texto("Provisões"),
-        normalizar_texto("MARGEM INTERMEDIAÇÃO"),
-        normalizar_texto("MG INTERMEDIAÇÃO LIQ"),
-        normalizar_texto("MG CONTRIBUIÇÃO DIRETA"),
-        normalizar_texto("RESULTADO ANTES IMPOSTO"),
-        normalizar_texto("RESULTADO CONTÁBIL"),
-    }
-    return normalizar_texto(linha) in linhas
 
 
 def carregar_comparativo_2025(arquivo):
@@ -2457,6 +2441,9 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         "RESULTADO CONTÁBIL",
         "Carteira de Crédito Média",
         "PL Médio",
+        "Impostos Diretos",
+        "Comissão (Apoio - Comercial - Mídia Paga)",
+        "Amortização "
     ]
 
     componentes_desp_totais = [
@@ -2615,8 +2602,8 @@ def tabela_html_comparativo(df):
     cols = ["Linha", "2025", "2026", "Δ R$", "Δ %", "2025 Acumulado", "Alcance 2025"]
     titulos = {
         "Linha": "Linha",
-        "2025": "1Q25",
-        "2026": "1Q26",
+        "2025": "1º Quad. 25",
+        "2026": "1º Quad. 26",
         "Δ R$": "Δ R$",
         "Δ %": "Δ %",
         "2025 Acumulado": "2025 Acumulado",
@@ -2742,7 +2729,7 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
             mode="gauge+number",
             value=alcance_pct,
             number={"suffix": "%", "font": {"size": 64, "color": "#ffffff", "family": "Arial Black"}},
-            title={"text": "<b>Resultado Contábil 1Q26 x acumulado de 2025</b>", "font": {"size": 22, "color": "#ffffff"}},
+            title={"text": "<b>Resultado Contábil 1º Quad. 26 x acumulado de 2025</b>", "font": {"size": 22, "color": "#ffffff"}},
             gauge={
                 "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#ffffff", "size": 14}},
                 "bar": {"color": cor_barra, "thickness": 0.38},
@@ -2769,7 +2756,7 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
         showarrow=False,
         align="center",
         text=(
-            f"<b>Realizado no 1Q26:</b> {formatar_moeda(realizado)}<br>"
+            f"<b>Realizado no 1º Quad. 26:</b> {formatar_moeda(realizado)}<br>"
             f"<b>Acumulado de 2025:</b> {formatar_moeda(base)}<br>"
             f"{texto_status}"
         ),
@@ -3073,14 +3060,14 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
         if not periodos_pnl:
             periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)
 
-        mes_para_trimestre = {3: "1Q", 6: "2Q", 9: "3Q", 12: "4Q"}
+        mes_para_trimestre = {3: "1º Quad.", 6: "2º Quad.", 9: "3º Quad.", 12: "4º Quad."}
         label_para_periodo = {}
         lista_labels_trimestre = []
         for p in periodos_pnl:
             if p["Data"] is not None:
                 tri = mes_para_trimestre.get(p["Data"].month, p["Período"])
-                ano = p["Data"].year
-                label = f"{tri} - {ano}"
+                ano = str(p["Data"].year)[-2:]
+                label = f"{tri} {ano}"
             else:
                 label = p["Período"]
             label_para_periodo[label] = p["Período"]
@@ -3166,7 +3153,7 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
 
             if pagina == "Acumulado":
                 variacao = variacao_pnl_acumulado_vs_2025(df_comp_2025, produto_sel_pnl, linha, realizado)
-                variacao_label = "vs 1Q25"
+                variacao_label = "vs 1º Quad. 25"
             else:
                 variacao = variacao_pnl_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
                 variacao_label = "Δ mês anterior"
@@ -3288,7 +3275,7 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
                     var = None
             else:
                 var = None
-            label_var = "vs 1Q25"
+            label_var = "vs 1º Quad. 25"
         else:
             var = variacao_pnl_mes_anterior(df_pnl_completo, row["Produto"], linha_resultado_contabil, data_sel_pnl)
             label_var = "vs mês ant."
@@ -3328,8 +3315,8 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
         margin=dict(l=10, r=10, t=10, b=10),
         showlegend=False,
     )
-    fig_prod.update_xaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)")
-    fig_prod.update_yaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
+    if pagina == "Acumulado":
+        fig_prod.update_layout(title={"text": "<b>Resultado Contábil acumulado por produto</b>", "font": {"size": 16, "color": "#ffffff"}})
     st.plotly_chart(fig_prod, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_tabela}</div>', unsafe_allow_html=True)
@@ -3374,14 +3361,13 @@ with tab_comp_2025:
         if df_comp.empty or df_comp_principais.empty:
             st.info("Não encontrei dados suficientes na aba Comparativo 2026 x 2025.")
         else:
-            st.markdown('<div class="section-title">Comparativo 1Q26 x 1Q25</div>', unsafe_allow_html=True)
-            st.markdown('<div style="color: #ffffff; font-weight: bold; font-size: 1.1rem; margin-bottom: 20px; margin-top: -5px;">Legenda: Q = Quadrimestre</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">Comparativo 1º Quad. 26 x 1º Quad. 25</div>', unsafe_allow_html=True)
 
             novos_cards_linha1 = [
-                ("Margem de Intermediação 1Q26", "MARGEM INTERMEDIAÇÃO"),
-                ("MG Intermediação Líq. 1Q26", "MG INTERMEDIAÇÃO LIQ"),
-                ("MG Contribuição Direta 1Q26", "MG CONTRIBUIÇÃO DIRETA"),
-                ("Resultado Antes do Imposto 1Q26", "RESULTADO ANTES IMPOSTO"),
+                ("Margem de Intermediação 1º Quad. 26", "MARGEM INTERMEDIAÇÃO"),
+                ("MG Intermediação Líq. 1º Quad. 26", "MG INTERMEDIAÇÃO LIQ"),
+                ("MG Contribuição Direta 1º Quad. 26", "MG CONTRIBUIÇÃO DIRETA"),
+                ("Resultado Antes do Imposto 1º Quad. 26", "RESULTADO ANTES IMPOSTO"),
             ]
             
             cols1 = st.columns(4)
@@ -3401,14 +3387,14 @@ with tab_comp_2025:
                             variacao_exibir = -variacao
                             cor_classe = "delta-negative"
                         card(titulo, valor_2026, ajuda=ajuda, variacao=variacao,
-                             variacao_label="vs 1Q25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
+                             variacao_label="vs 1º Quad. 25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
 
             st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
 
             novos_cards_linha2 = [
-                ("Resultado Contábil 1Q26", "RESULTADO CONTÁBIL"),
-                ("Carteira de Crédito (Média) 1Q26", "Carteira de Crédito Média"),
-                ("PL Médio 1Q26", "PL Médio"),
+                ("Resultado Contábil 1º Quad. 26", "RESULTADO CONTÁBIL"),
+                ("Carteira de Crédito (Média) 1º Quad. 26", "Carteira de Crédito Média"),
+                ("PL Médio 1º Quad. 26", "PL Médio"),
             ]
             
             cols2 = st.columns(3)
@@ -3429,7 +3415,7 @@ with tab_comp_2025:
                             variacao_exibir = -variacao
                             cor_classe = "delta-negative"
                         card(titulo, valor_2026, ajuda=ajuda, variacao=variacao,
-                             variacao_label="vs 1Q25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
+                             variacao_label="vs 1º Quad. 25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
 
             st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
 
@@ -3446,7 +3432,7 @@ with tab_comp_2025:
                 else:
                     st.info("Não foi possível calcular o alcance do Resultado Contábil com a base atual.")
 
-            st.markdown('<div class="section-title">1Q25 x 1Q26 por linha principal</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">1º Quad. 25 x 1º Quad. 26 por linha principal</div>', unsafe_allow_html=True)
             
             linhas_ocultas_grafico = ["carteira de credito media", "pl medio", "carteira de credito bruta media", "pl medio banco hipo"]
             df_comp_grafico = df_comp_principais[~df_comp_principais["Linha"].map(normalizar_texto).isin(linhas_ocultas_grafico)]
@@ -3488,12 +3474,13 @@ with tab_comp_2025:
                 plot_bgcolor="#080f1f",
                 height=520,
                 margin=dict(l=10, r=120, t=40, b=20),
+                title={"text": "<b>1º Quad. 25 x 1º Quad. 26 por linha principal</b>", "font": {"size": 16, "color": "#ffffff"}},
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
             )
             st.plotly_chart(fig_comp_ano, use_container_width=True)
 
             st.markdown('<div class="section-title">Tabela comparativa</div>', unsafe_allow_html=True)
-            st.markdown(tabela_html_comparativo(df_comp_grafico), unsafe_allow_html=True)
+            st.markdown(tabela_html_comparativo(df_comp_principais), unsafe_allow_html=True)
 
     except Exception as erro:
         st.info(f"Não consegui carregar a aba Comparativo 2026 x 2025: {erro}")
