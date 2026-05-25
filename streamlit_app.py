@@ -1525,7 +1525,7 @@ def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual
     return (float(valor_ytd_atual) - valor_2025) / abs(valor_2025)
 
 
-def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None):
+def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None):
     periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)
 
     if pagina == "Acumulado":
@@ -1554,8 +1554,9 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
 
     st.markdown('<div class="section-title">Filtros</div>', unsafe_allow_html=True)
     
+    col_data, col_produto, col_espaco = st.columns([1, 1, 2.5])
+    
     if pagina == "Acumulado":
-        col_produto, col_espaco = st.columns([1, 3.5])
         df_pnl = carregar_pnl_acumulado_oficial_completo(arquivo)
         df_pnl = garantir_linha_despesas_administrativas(df_pnl)
         if not df_pnl.empty:
@@ -1564,7 +1565,6 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
             label_sel = "Acumulado"
         data_sel_pnl = label_sel
     else:
-        col_data, col_produto, col_espaco = st.columns([1, 1, 2.5])
         with col_data:
             label_sel = st.selectbox(
                 "Data base",
@@ -1692,6 +1692,10 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         uniformtext_mode="show",
         bargap=0.30,
         bargroupgap=0.18,
+        xaxis_showgrid=False,
+        yaxis_showgrid=False,
+        xaxis_zeroline=False,
+        yaxis_zeroline=False
     )
 
     if not base_grafico.empty:
@@ -1701,15 +1705,15 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         fig_comp.update_xaxes(
             showgrid=False,
             zeroline=False,
-            gridcolor="rgba(0,0,0,0)",
+            showline=False,
             tickprefix="R$ ",
             separatethousands=True,
             range=[x_min - x_pad, x_max + x_pad],
         )
     else:
-        fig_comp.update_xaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
+        fig_comp.update_xaxes(showgrid=False, zeroline=False, showline=False, tickprefix="R$ ", separatethousands=True)
 
-    fig_comp.update_yaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickfont=dict(size=12, color="#ffffff"))
+    fig_comp.update_yaxes(showgrid=False, zeroline=False, showline=False, tickfont=dict(size=12, color="#ffffff"))
     st.plotly_chart(fig_comp, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_resultado_produto}</div>', unsafe_allow_html=True)
@@ -1788,9 +1792,15 @@ def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None
         height=390,
         margin=dict(l=10, r=10, t=10, b=10),
         showlegend=False,
+        xaxis_showgrid=False,
+        yaxis_showgrid=False,
+        xaxis_zeroline=False,
+        yaxis_zeroline=False
     )
     if pagina == "Acumulado":
         fig_prod.update_layout(title={"text": "<b>Resultado Contábil acumulado por produto</b>", "font": {"size": 16, "color": "#ffffff"}})
+    fig_prod.update_xaxes(showgrid=False, zeroline=False, showline=False)
+    fig_prod.update_yaxes(showgrid=False, zeroline=False, showline=False, tickprefix="R$ ", separatethousands=True)
     st.plotly_chart(fig_prod, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_tabela}</div>', unsafe_allow_html=True)
@@ -2978,6 +2988,10 @@ with tab_resultados:
             height=500,
             margin=dict(l=10, r=40, t=35, b=20),
             legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
+            xaxis_showgrid=False,
+            yaxis_showgrid=False,
+            xaxis_zeroline=False,
+            yaxis_zeroline=False
         )
         fig.update_xaxes(
             tickmode="array",
@@ -2987,6 +3001,7 @@ with tab_resultados:
             title_text="",
             showgrid=False,
             zeroline=False,
+            showline=False,
             tickfont=dict(color='#FFFFFF', size=13, family="Arial", weight="bold")
         )
         fig.update_yaxes(
@@ -2996,6 +3011,7 @@ with tab_resultados:
             title_text="",
             showgrid=False,
             zeroline=False,
+            showline=False
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -3218,6 +3234,10 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
         uniformtext_mode="show",
         bargap=0.30,
         bargroupgap=0.18,
+        xaxis_showgrid=False,
+        yaxis_showgrid=False,
+        xaxis_zeroline=False,
+        yaxis_zeroline=False
     )
 
     if not base_grafico.empty:
@@ -3227,15 +3247,16 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
         fig_comp.update_xaxes(
             showgrid=False,
             zeroline=False,
+            showline=False,
             gridcolor="rgba(0,0,0,0)",
             tickprefix="R$ ",
             separatethousands=True,
             range=[x_min - x_pad, x_max + x_pad],
         )
     else:
-        fig_comp.update_xaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
+        fig_comp.update_xaxes(showgrid=False, zeroline=False, showline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
 
-    fig_comp.update_yaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickfont=dict(size=12, color="#ffffff"))
+    fig_comp.update_yaxes(showgrid=False, zeroline=False, showline=False, gridcolor="rgba(0,0,0,0)", tickfont=dict(size=12, color="#ffffff"))
     st.plotly_chart(fig_comp, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_resultado_produto}</div>', unsafe_allow_html=True)
@@ -3314,9 +3335,15 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
         height=390,
         margin=dict(l=10, r=10, t=10, b=10),
         showlegend=False,
+        xaxis_showgrid=False,
+        yaxis_showgrid=False,
+        xaxis_zeroline=False,
+        yaxis_zeroline=False
     )
     if pagina == "Acumulado":
         fig_prod.update_layout(title={"text": "<b>Resultado Contábil acumulado por produto</b>", "font": {"size": 16, "color": "#ffffff"}})
+    fig_prod.update_xaxes(showgrid=False, zeroline=False, showline=False, gridcolor="rgba(0,0,0,0)")
+    fig_prod.update_yaxes(showgrid=False, zeroline=False, showline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
     st.plotly_chart(fig_prod, use_container_width=True)
 
     st.markdown(f'<div class="section-title">{titulo_tabela}</div>', unsafe_allow_html=True)
@@ -3434,8 +3461,8 @@ with tab_comp_2025:
 
             st.markdown('<div class="section-title">1º Quad. 25 x 1º Quad. 26 por linha principal</div>', unsafe_allow_html=True)
             
-            linhas_ocultas_grafico = ["carteira de credito media", "pl medio", "carteira de credito bruta media", "pl medio banco hipo"]
-            df_comp_grafico = df_comp_principais[~df_comp_principais["Linha"].map(normalizar_texto).isin(linhas_ocultas_grafico)]
+            termos_ocultos_grafico = ["carteira", "pl medio", "impostos diretos", "comissao", "amortizacao"]
+            df_comp_grafico = df_comp_principais[~df_comp_principais["Linha"].map(normalizar_texto).str.contains('|'.join(termos_ocultos_grafico), regex=True, na=False)].copy()
 
             base_long = df_comp_grafico.melt(
                 id_vars=["Linha", "Ordem"],
@@ -3466,21 +3493,28 @@ with tab_comp_2025:
                 xmin = base_long["Valor"].min()
                 xmax = base_long["Valor"].max()
                 xpad = max((xmax - xmin) * 0.18, 1)
-                fig_comp_ano.update_xaxes(range=[xmin - xpad, xmax + xpad], showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
-            fig_comp_ano.update_yaxes(showgrid=False, zeroline=False, gridcolor="rgba(0,0,0,0)")
+                fig_comp_ano.update_xaxes(range=[xmin - xpad, xmax + xpad], showgrid=False, zeroline=False, showline=False, gridcolor="rgba(0,0,0,0)", tickprefix="R$ ", separatethousands=True)
+            fig_comp_ano.update_yaxes(showgrid=False, zeroline=False, showline=False, gridcolor="rgba(0,0,0,0)")
             fig_comp_ano.update_layout(
                 template="plotly_dark",
                 paper_bgcolor="#080f1f",
                 plot_bgcolor="#080f1f",
                 height=520,
                 margin=dict(l=10, r=120, t=40, b=20),
-                title={"text": "<b>1º Quad. 25 x 1º Quad. 26 por linha principal</b>", "font": {"size": 16, "color": "#ffffff"}},
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=13, color="#ffffff", family="Arial Black")),
+                xaxis_showgrid=False,
+                yaxis_showgrid=False,
+                xaxis_zeroline=False,
+                yaxis_zeroline=False
             )
             st.plotly_chart(fig_comp_ano, use_container_width=True)
 
             st.markdown('<div class="section-title">Tabela comparativa</div>', unsafe_allow_html=True)
-            st.markdown(tabela_html_comparativo(df_comp_principais), unsafe_allow_html=True)
+            
+            termos_ocultos_tabela = ["impostos diretos", "comissao", "amortizacao"]
+            df_comp_tabela = df_comp_principais[~df_comp_principais["Linha"].map(normalizar_texto).str.contains('|'.join(termos_ocultos_tabela), regex=True, na=False)].copy()
+            
+            st.markdown(tabela_html_comparativo(df_comp_tabela), unsafe_allow_html=True)
 
     except Exception as erro:
         st.info(f"Não consegui carregar a aba Comparativo 2026 x 2025: {erro}")
