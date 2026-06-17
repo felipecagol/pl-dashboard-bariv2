@@ -17,6 +17,7 @@ st.set_page_config(
 
 ARQUIVO_PADRAO = "BASE_DASHBOARD_PL_2026.xlsx"
 ABA_RESULTADO = "RESULTADO"
+ABA_BASE = "BASE_DASH"
 DATA_MINIMA_DASH = pd.Timestamp(2026, 1, 1)
 
 CSS = """
@@ -710,6 +711,18 @@ def carregar_resultado(arquivo):
     if df.empty:
         raise ValueError("A aba RESULTADO não possui dados a partir de janeiro/2026.")
 
+    return df
+
+
+@st.cache_data(show_spinner=False)
+def carregar_base_dash(arquivo):
+    df = pd.read_excel(arquivo, sheet_name=ABA_BASE, engine="openpyxl")
+    df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
+    for col in ["Visao", "Linha_PnL", "Produto", "Metrica", "Periodo"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+    if "Valor" in df.columns:
+        df["Valor"] = pd.to_numeric(df["Valor"], errors="coerce").fillna(0)
     return df
 
 
