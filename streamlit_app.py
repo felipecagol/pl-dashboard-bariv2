@@ -365,16 +365,13 @@ CSS = """
 st.markdown(CSS, unsafe_allow_html=True)
 
 
-# ==============================================================================
-# BLOCO DE FUNÇÕES CORE (TODAS DEFINIDAS AQUI NO TOPO)
-# ==============================================================================
-
 def get_file_hash(arquivo):
     if isinstance(arquivo, Path):
         return arquivo.stat().st_mtime
     if arquivo is not None:
         return arquivo.size
     return 0
+
 
 def safe_float(valor):
     if pd.isna(valor):
@@ -396,6 +393,7 @@ def safe_float(valor):
     except:
         return pd.NA
 
+
 def normalizar_texto(valor):
     if pd.isna(valor):
         return ""
@@ -404,6 +402,7 @@ def normalizar_texto(valor):
     texto = "".join(ch for ch in texto if not unicodedata.combining(ch))
     texto = re.sub(r"[^a-z0-9]+", " ", texto)
     return re.sub(r"\s+", " ", texto).strip()
+
 
 def formatar_moeda(valor):
     try:
@@ -422,13 +421,16 @@ def formatar_moeda(valor):
         texto = f"{sinal}R$ {valor_abs:,.2f}"
     return texto.replace(",", "X").replace(".", ",").replace("X", ".")
 
+
 def formatar_moeda_curta(valor):
     try:
         valor = float(valor)
     except Exception:
         return ""
+
     sinal = "-" if valor < 0 else ""
     valor_abs = abs(valor)
+
     if valor_abs >= 1_000_000_000:
         texto = f"{sinal}R$ {valor_abs / 1_000_000_000:,.1f} bi"
     elif valor_abs >= 1_000_000:
@@ -437,7 +439,9 @@ def formatar_moeda_curta(valor):
         texto = f"{sinal}R$ {valor_abs / 1_000:,.0f} mil"
     else:
         texto = f"{sinal}R$ {valor_abs:,.0f}"
+
     return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
 
 def formatar_numero(valor):
     if pd.isna(valor):
@@ -448,6 +452,7 @@ def formatar_numero(valor):
         return str(valor)
     return f"{valor:,.0f}".replace(",", ".")
 
+
 def formatar_percentual(valor):
     if pd.isna(valor):
         return ""
@@ -455,9 +460,11 @@ def formatar_percentual(valor):
         valor = float(valor)
     except Exception:
         return str(valor)
+
     sinal = "+" if valor > 0 else ""
     texto = f"{sinal}{valor * 100:,.1f}%"
     return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
 
 def linhas_percentuais_pnl():
     return {
@@ -474,8 +481,10 @@ def linhas_percentuais_pnl():
         normalizar_texto("Alíquota de IR/CSLL"),
     }
 
+
 def linha_pnl_percentual(linha):
     return normalizar_texto(linha) in linhas_percentuais_pnl()
+
 
 def formatar_percentual_valor(valor):
     if pd.isna(valor):
@@ -484,8 +493,10 @@ def formatar_percentual_valor(valor):
         valor = float(valor)
     except Exception:
         return str(valor)
+
     texto = f"{valor * 100:,.1f}%"
     return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
 
 def formatar_pontos_percentuais(valor):
     if pd.isna(valor):
@@ -494,33 +505,98 @@ def formatar_pontos_percentuais(valor):
         valor = float(valor)
     except Exception:
         return str(valor)
+
     sinal = "+" if valor > 0 else ""
     texto = f"{sinal}{valor * 100:,.1f} pp"
     return texto.replace(",", "X").replace(".", ",").replace("X", ".")
 
+
+def formatar_pontos_percentuais_sem_sinal(valor):
+    if pd.isna(valor):
+        return ""
+    try:
+        valor = float(valor)
+    except Exception:
+        return str(valor)
+
+    texto = f"{abs(valor) * 100:,.1f} pp"
+    return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def tabela_html(df, df_valores=None, coluna_delta="Δ mês anterior"):
+    html = ['<div class="table-wrap"><table class="dash-table">']
+    html.append("<thead><tr>")
+    for col in df.columns:
+        html.append(f"<th>{col}</th>")
+    html.append("</tr></thead><tbody>")
+
+    for idx, row in df.iterrows():
+        classe_linha = ' class="total-row"' if str(row.iloc[0]).strip().lower() == "resultado total" else ""
+        html.append(f"<tr{classe_linha}>")
+
+        for col in df.columns:
+            classes = []
+
+            if col == coluna_delta and df_valores is not None:
+                valor_delta = df_valores.loc[idx, col]
+                if pd.notna(valor_delta):
+                    if valor_delta > 0:
+                        classes.append("delta-positive")
+                    elif valor_delta < 0:
+                        classes.append("delta-negative")
+                    else:
+                        classes.append("delta-neutral")
+            elif col != "Empresa" and df_valores is not None and col in df_valores.columns:
+                valor = df_valores.loc[idx, col]
+                if pd.notna(valor) and valor < 0:
+                    classes.append("neg-value")
+
+            classe_td = f' class="{" ".join(classes)}"' if classes else ""
+            html.append(f"<td{classe_td}>{row[col]}</td>")
+
+        html.append("</tr>")
+
+    html.append("</tbody></table></div>")
+    return "".join(html)
+
+
 def converter_periodo(valor):
     if pd.isna(valor):
         return None
+
     if isinstance(valor, pd.Timestamp):
         return valor.to_period("M").to_timestamp()
+
     if hasattr(valor, "year") and hasattr(valor, "month"):
         try:
             return pd.Timestamp(valor.year, valor.month, 1)
         except Exception:
             pass
+
     texto = str(valor).strip().lower()
     if not texto or texto == "nan":
         return None
+
     meses = {
-        "jan": 1, "janeiro": 1, "fev": 2, "fevereiro": 2, "mar": 3, "marco": 3, "março": 3,
-        "abr": 4, "abril": 4, "mai": 5, "maio": 5, "jun": 6, "junho": 6, "jul": 7, "julho": 7,
-        "ago": 8, "agosto": 8, "set": 9, "sep": 9, "setembro": 9, "out": 10, "oct": 10, "outubro": 10,
-        "nov": 11, "novembro": 11, "dez": 12, "dec": 12, "dezembro": 12,
+        "jan": 1, "janeiro": 1,
+        "fev": 2, "fevereiro": 2,
+        "mar": 3, "marco": 3, "março": 3,
+        "abr": 4, "abril": 4,
+        "mai": 5, "maio": 5,
+        "jun": 6, "junho": 6,
+        "jul": 7, "julho": 7,
+        "ago": 8, "agosto": 8,
+        "set": 9, "sep": 9, "setembro": 9,
+        "out": 10, "oct": 10, "outubro": 10,
+        "nov": 11, "novembro": 11,
+        "dez": 12, "dec": 12, "dezembro": 12,
     }
+
     texto_sem_acento = normalizar_texto(texto)
     partes = texto_sem_acento.split()
     mes = None
     ano = None
+
     for parte in partes:
         if parte in meses:
             mes = meses[parte]
@@ -528,12 +604,16 @@ def converter_periodo(valor):
             ano = int(parte)
         elif re.fullmatch(r"\d{2}", parte):
             ano = 2000 + int(parte)
+
     if mes and ano:
         return pd.Timestamp(ano, mes, 1)
+
     tentativa = pd.to_datetime(texto, errors="coerce", dayfirst=True)
     if pd.notna(tentativa):
         return tentativa.to_period("M").to_timestamp()
+
     return None
+
 
 def nome_periodo(data):
     if pd.isna(data):
@@ -542,25 +622,30 @@ def nome_periodo(data):
     data = pd.Timestamp(data)
     return f"{meses[data.month - 1]}/{data.year}"
 
+
 def formatar_variacao(valor, label="Δ mês anterior"):
     try:
         valor = float(valor)
     except Exception:
         valor = 0.0
+
     sinal = "+" if valor > 0 else ""
     texto = f"{label} {sinal}{valor * 100:,.1f}%"
     return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
 
 def classe_variacao(valor):
     try:
         valor = float(valor)
     except Exception:
         valor = 0.0
+
     if valor > 0:
         return "delta-positive"
     if valor < 0:
         return "delta-negative"
     return "delta-neutral"
+
 
 def card(titulo, valor, ajuda="", variacao=None, variacao_label="Δ mês anterior", cor_classe=None, variacao_exibir=None):
     delta_html = ""
@@ -568,7 +653,9 @@ def card(titulo, valor, ajuda="", variacao=None, variacao_label="Δ mês anterio
         cls = cor_classe if cor_classe is not None else classe_variacao(variacao)
         val_txt = variacao_exibir if variacao_exibir is not None else variacao
         delta_html = f'<div class="kpi-delta {cls}">{formatar_variacao(val_txt, variacao_label)}</div>'
+
     ajuda_html = f'<div class="kpi-help">{ajuda}</div>' if ajuda else ""
+
     st.markdown(
         f"""
         <div class="kpi-card">
@@ -580,6 +667,7 @@ def card(titulo, valor, ajuda="", variacao=None, variacao_label="Δ mês anterio
         """,
         unsafe_allow_html=True,
     )
+
 
 @st.cache_data(show_spinner=False)
 def carregar_resultado(arquivo, cache_buster=None):
@@ -649,6 +737,7 @@ def carregar_resultado(arquivo, cache_buster=None):
 
     return df
 
+
 @st.cache_data(show_spinner=False)
 def carregar_base_dash(arquivo, cache_buster=None):
     df = pd.read_excel(arquivo, sheet_name=ABA_BASE, engine="openpyxl")
@@ -660,34 +749,47 @@ def carregar_base_dash(arquivo, cache_buster=None):
         df["Valor"] = df["Valor"].apply(safe_float).fillna(0)
     return df
 
+
 def obter_periodos_pnl_mensal_anualizado(arquivo):
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Mensal - Anualizado", header=None, engine="openpyxl")
     except Exception:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Mensal", header=None, engine="openpyxl")
+
     periodos = []
     chaves_vistas = set()
+
     for idx in bruto.index:
         for col in bruto.columns:
             if normalizar_texto(bruto.loc[idx, col]) != "data base":
                 continue
+
             for c_data in range(col + 1, len(bruto.columns)):
                 valor = bruto.loc[idx, c_data]
                 data = converter_periodo(valor)
+
                 if data is None:
                     continue
+
                 data_ts = pd.Timestamp(data)
+
                 if data_ts.year < 2020 or data_ts.year > 2035:
                     continue
+
                 chave = data_ts.strftime("%Y-%m")
                 if chave not in chaves_vistas:
                     periodos.append({"Período": nome_periodo(data_ts), "Data": data_ts})
                     chaves_vistas.add(chave)
+
                 break
+
     periodos = sorted(periodos, key=lambda x: x["Data"])
+
     if not periodos:
         return [{"Período": "Período atual", "Data": None}]
+
     return periodos
+
 
 @st.cache_data(show_spinner=False)
 def carregar_pnl_mensal(arquivo, cache_buster=None):
@@ -809,6 +911,7 @@ def carregar_pnl_mensal(arquivo, cache_buster=None):
     df.loc[mask_modulo, "Valor"] = df.loc[mask_modulo, "Valor"].abs()
 
     return df
+
 
 @st.cache_data(show_spinner=False)
 def carregar_pnl_acumulado_oficial_completo(arquivo, cache_buster=None):
@@ -942,6 +1045,7 @@ def carregar_pnl_acumulado_oficial_completo(arquivo, cache_buster=None):
 
     return df
 
+
 def linhas_ocultas_pnl():
     return {
         normalizar_texto("Componente Juros"), normalizar_texto("Componente Inflação"),
@@ -953,12 +1057,14 @@ def linhas_ocultas_pnl():
         normalizar_texto("Despesas Administrativas")
     }
 
+
 def obter_linhas_tabela_pnl(df_pnl):
     if df_pnl.empty: return []
     linhas = df_pnl[["Linha", "Linha_Normalizada", "Ordem_Linha"]].drop_duplicates().sort_values("Ordem_Linha").drop_duplicates(subset=["Linha_Normalizada"], keep="first")
     ocultas = linhas_ocultas_pnl()
     linhas = linhas[~linhas["Linha_Normalizada"].isin(ocultas)]
     return linhas["Linha"].tolist()
+
 
 def obter_linhas_principais_pnl(df_pnl):
     linhas_desejadas = [
@@ -976,6 +1082,7 @@ def obter_linhas_principais_pnl(df_pnl):
         if not match.empty:
             selecionadas.append(match.iloc[0]["Linha"])
     return selecionadas
+
 
 def garantir_linha_despesas_administrativas(df_pnl):
     if df_pnl.empty: return df_pnl
@@ -1015,11 +1122,13 @@ def garantir_linha_despesas_administrativas(df_pnl):
     df_sem = df_pnl[~df_pnl["Linha_Normalizada"].isin(nomes_substituir)].copy()
     return pd.concat([df_sem, agregado], ignore_index=True)
 
+
 def valor_pnl(df, produto, linha, metrica):
     base = df[(df["Produto"] == produto) & (df["Linha"] == linha) & (df["Métrica"] == metrica)]
     if base.empty: return 0
     if "Ordem_Linha" in base.columns: base = base.sort_values("Ordem_Linha")
     return base["Valor"].iloc[0]
+
 
 def variacao_pnl_mes_anterior(df_pnl_completo, produto, linha, periodo_atual):
     linha_atual = df_pnl_completo[(df_pnl_completo["Produto"] == produto) & (df_pnl_completo["Linha"] == linha) & (df_pnl_completo["Métrica"] == "Realizado") & (df_pnl_completo["Periodo"] == periodo_atual)]
@@ -1033,6 +1142,7 @@ def variacao_pnl_mes_anterior(df_pnl_completo, produto, linha, periodo_atual):
     if valor_anterior == 0: return None
     return (valor_atual - valor_anterior) / abs(valor_anterior)
 
+
 def filtrar_pnl_acumulado(df_pnl_completo, periodo_atual):
     linha_periodo = df_pnl_completo[df_pnl_completo["Periodo"] == periodo_atual]
     if linha_periodo.empty: return df_pnl_completo.iloc[0:0].copy()
@@ -1042,10 +1152,25 @@ def filtrar_pnl_acumulado(df_pnl_completo, periodo_atual):
     base = df_pnl_completo[(df_pnl_completo["Data"] >= data_inicio) & (df_pnl_completo["Data"] <= data_atual)].copy()
     return base
 
+
 def buscar_linha_acumulada(df_acumulado, produto, linha_norm_alvo, metrica="Realizado"):
     base = df_acumulado[(df_acumulado["Produto"] == produto) & (df_acumulado["Linha_Normalizada"] == linha_norm_alvo) & (df_acumulado["Métrica"] == metrica)]
     if base.empty: return None
     return float(base["Valor"].iloc[0])
+
+
+def linhas_media_pnl():
+    return {
+        normalizar_texto("Carteira de Crédito Bruta Média"),
+        normalizar_texto("Carteira de Crédito SD Cliente Média"),
+        normalizar_texto("Carteira de Crédito SD Cliente (média)"),
+        normalizar_texto("Carteira de Crédito Média"),
+        normalizar_texto("PL Médio"),
+        normalizar_texto("PL Médio (Banco + Hipo)"),
+        normalizar_texto("PL Médio (Prudencial + BRCards)"),
+        normalizar_texto("Alocação de Capital"),
+    }
+
 
 def recalcular_indicadores_percentuais(df_acumulado, n_meses):
     if df_acumulado.empty or n_meses <= 0: return df_acumulado
@@ -1100,6 +1225,7 @@ def recalcular_indicadores_percentuais(df_acumulado, n_meses):
     df_sem_percentuais = df_acumulado[~(df_acumulado["Linha_Normalizada"].isin(linhas_recalculadas) & df_acumulado["Métrica"].isin(["Realizado", "Orçado"]))].copy()
     return pd.concat([df_sem_percentuais, pd.DataFrame(novos_registros)], ignore_index=True)
 
+
 def agregar_pnl_acumulado(df_pnl_periodo):
     if df_pnl_periodo.empty: return df_pnl_periodo.copy()
     linhas_percentuais = linhas_percentuais_pnl()
@@ -1144,6 +1270,7 @@ def agregar_pnl_acumulado(df_pnl_periodo):
             
     return pd.concat([agrupado, pd.DataFrame(linhas_delta)], ignore_index=True)
 
+
 def variacao_pnl_acumulado_mes_anterior(df_pnl_completo, produto, linha, periodo_atual):
     linha_atual = df_pnl_completo[(df_pnl_completo["Produto"] == produto) & (df_pnl_completo["Linha"] == linha) & (df_pnl_completo["Métrica"] == "Realizado") & (df_pnl_completo["Periodo"] == periodo_atual)]
     if linha_atual.empty: return None
@@ -1160,6 +1287,7 @@ def variacao_pnl_acumulado_mes_anterior(df_pnl_completo, produto, linha, periodo
 
     if valor_acumulado_anterior == 0: return None
     return (valor_acumulado_atual - valor_acumulado_anterior) / abs(valor_acumulado_anterior)
+
 
 def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual):
     if df_comp_2025 is None or df_comp_2025.empty or pd.isna(valor_ytd_atual): return None
@@ -1191,6 +1319,7 @@ def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual
 
     if valor_2025 is None or valor_2025 == 0: return None
     return (float(valor_ytd_atual) - valor_2025) / abs(valor_2025)
+
 
 def tabela_html_comparativo(df):
     html = ['<div class="table-wrap"><table class="dash-table">']
@@ -1226,6 +1355,7 @@ def tabela_html_comparativo(df):
     html.append("</tbody></table></div>")
     return "".join(html)
 
+
 def obter_linha_comparativo(df_comp_principais, linha_ref):
     linha_norm = normalizar_texto(linha_ref)
     res = df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).eq(linha_norm)]
@@ -1233,6 +1363,7 @@ def obter_linha_comparativo(df_comp_principais, linha_ref):
     if "carteira" in linha_norm: res = df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).str.contains("carteira", na=False)]
     if res.empty and "pl medio" in linha_norm: res = df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).str.contains("pl medio", na=False)]
     return res
+
 
 def grafico_alcance_vs_orcado(valor_acumulado, valor_orcado):
     if pd.isna(valor_acumulado) or pd.isna(valor_orcado) or float(valor_orcado) == 0: return None
@@ -1262,6 +1393,7 @@ def grafico_alcance_vs_orcado(valor_acumulado, valor_orcado):
     fig.update_layout(template="plotly_dark", paper_bgcolor="#080f1f", plot_bgcolor="#080f1f", height=480, margin=dict(l=30, r=30, t=70, b=130))
     return fig
 
+
 def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
     if pd.isna(valor_2026) or pd.isna(valor_base_2025) or float(valor_base_2025) == 0: return None
     base = abs(float(valor_base_2025))
@@ -1289,385 +1421,6 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
     )
     fig.update_layout(template="plotly_dark", paper_bgcolor="#080f1f", plot_bgcolor="#080f1f", height=580, margin=dict(l=80, r=80, t=80, b=140))
     return fig
-
-def montar_tabela_empresas_e_total(df):
-    excluir_exatos = {
-        "banco", "equiv patr", "jcp dividendos", "br cards", "resultado mep",
-        "resultado congl financeiro", "resultado conglomerado financeiro", "resultado coligadas",
-        "resultado congl coligadas", "resultado conglomerado coligadas",
-    }
-    excluir_contem = [
-        "resultado congl financeiro", "resultado conglomerado financeiro", "resultado coligadas",
-        "resultado congl coligadas", "resultado conglomerado coligadas",
-    ]
-    renomear = {
-        "resultado banco": "Banco", "resulta br cards": "BR Cards", "resultado br cards": "BR Cards",
-        "res total": "Resultado Total", "resultado total": "Resultado Total",
-    }
-    linha_total = achar_linha_exata_ou_contendo(df, ["res total", "resultado total"])
-    linhas = df[["Linha", "Linha_Normalizada", "Ordem_Linha"]].drop_duplicates().sort_values("Ordem_Linha").copy()
-
-    def manter(row):
-        nome = row["Linha_Normalizada"]
-        if linha_total is not None and row["Linha"] == linha_total: return True
-        if nome in excluir_exatos: return False
-        if any(term in nome for term in excluir_contem): return False
-        return True
-
-    linhas_filtradas = linhas[linhas.apply(manter, axis=1)]["Linha"].tolist()
-    df_tabela = df[df["Linha"].isin(linhas_filtradas)].copy()
-    datas_ordem = df_tabela[["Período", "Data"]].drop_duplicates().sort_values("Data")
-    colunas = datas_ordem["Período"].tolist()
-    tabela = df_tabela.pivot_table(index="Linha", columns="Período", values="Valor", aggfunc="sum").reindex(index=linhas_filtradas).reindex(columns=colunas).reset_index()
-    tabela["Linha"] = tabela["Linha"].map(lambda x: renomear.get(normalizar_texto(x), x))
-    return tabela
-
-def achar_linha_exata_ou_contendo(df, termos):
-    linhas = df[["Linha", "Linha_Normalizada", "Ordem_Linha"]].drop_duplicates().sort_values("Ordem_Linha")
-    for termo in termos:
-        exato = linhas[linhas["Linha_Normalizada"].eq(normalizar_texto(termo))]
-        if not exato.empty: return exato.iloc[0]["Linha"]
-    for termo in termos:
-        encontrado = linhas[linhas["Linha_Normalizada"].str.contains(normalizar_texto(termo), regex=False, na=False)]
-        if not encontrado.empty: return encontrado.iloc[0]["Linha"]
-    return None
-
-def montar_resultados_principais(df):
-    specs = [
-        ("Resultado Conglomerado Financeiro", ["resultado congl financeiro", "resultado conglomerado financeiro"]),
-        ("Resultado Coligadas", ["resultado coligadas"]),
-        ("Resultado Conglomerado + Coligadas", ["resultado congl coligadas", "resultado conglomerado coligadas"]),
-        ("Resultado Total", ["res total", "resultado total"]),
-    ]
-    mapeamento = []
-    for titulo, termos in specs:
-        linha = achar_linha_exata_ou_contendo(df, termos)
-        if linha: mapeamento.append({"Indicador": titulo, "Linha": linha})
-    if not mapeamento: return pd.DataFrame(columns=["Indicador", "Linha", "Data", "Período", "Valor"])
-    return df.merge(pd.DataFrame(mapeamento), on="Linha", how="inner")
-
-def periodo_anterior(periodos_df, periodo_atual):
-    linha_atual = periodos_df[periodos_df["Período"] == periodo_atual]
-    if linha_atual.empty: return None
-    data_atual = linha_atual["Data"].iloc[0]
-    anteriores = periodos_df[periodos_df["Data"] < data_atual].sort_values("Data")
-    if anteriores.empty: return None
-    return anteriores.iloc[-1]["Período"]
-
-def variacao_mes_anterior(df_principais, indicador, periodo_atual, periodo_ant):
-    if periodo_ant is None: return None
-    valor_atual = df_principais[(df_principais["Indicador"] == indicador) & (df_principais["Período"] == periodo_atual)]["Valor"].sum()
-    valor_ant = df_principais[(df_principais["Indicador"] == indicador) & (df_principais["Período"] == periodo_ant)]["Valor"].sum()
-    if valor_ant == 0: return None
-    return (valor_atual - valor_ant) / abs(valor_ant)
-
-def resultado_total_acumulado_ano(df_principais, periodo_atual):
-    linha_atual = df_principais[(df_principais["Indicador"] == "Resultado Total") & (df_principais["Período"] == periodo_atual)]
-    if linha_atual.empty: return None, None, None, None
-    data_atual = linha_atual["Data"].iloc[0]
-    ano_atual = pd.Timestamp(data_atual).year
-    data_inicio = pd.Timestamp(ano_atual, 1, 1)
-    base_ano = df_principais[(df_principais["Indicador"] == "Resultado Total") & (df_principais["Data"] >= data_inicio) & (df_principais["Data"] <= data_atual)].copy()
-    if base_ano.empty: return None, None, None, None
-    valor_acumulado = base_ano["Valor"].sum()
-    data_mes_anterior = pd.Timestamp(data_atual) - pd.DateOffset(months=1)
-    base_ate_mes_anterior = base_ano[base_ano["Data"] <= data_mes_anterior]
-    valor_acumulado_anterior = base_ate_mes_anterior["Valor"].sum() if not base_ate_mes_anterior.empty else None
-    if valor_acumulado_anterior is None or valor_acumulado_anterior == 0: variacao = None
-    else: variacao = (valor_acumulado - valor_acumulado_anterior) / abs(valor_acumulado_anterior)
-    return valor_acumulado, variacao, valor_acumulado_anterior, data_inicio
-
-def card_resultado_total_acumulado(valor_acumulado, variacao, valor_acumulado_anterior, periodo_atual):
-    if valor_acumulado is None: valor_html, ajuda = "N/D", "Resultado Total não encontrado"
-    else: valor_html, ajuda = formatar_moeda(valor_acumulado), f"Acumulado de jan/2026 até {periodo_atual}"
-    st.markdown(
-        f"""
-        <div class="side-card">
-            <div class="side-card-label">Resultado Total acumulado em 2026</div>
-            <div class="side-card-value">{valor_html}</div>
-            <div class="side-card-help">{ajuda}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-def composicao_resultado_total_acumulado_produto(df_pnl_completo, periodo_atual, empresa_sel="Todos"):
-    if df_pnl_completo is None or df_pnl_completo.empty: return None, []
-    df_periodo = filtrar_pnl_acumulado(df_pnl_completo, periodo_atual)
-    df_acumulado = agregar_pnl_acumulado(df_periodo)
-    if df_acumulado.empty: return None, []
-    linhas_principais = obter_linhas_principais_pnl(df_acumulado)
-    linha_resultado_contabil = next((linha for linha in linhas_principais if normalizar_texto(linha) in ["resultado contabil", "resultado contábil"]), None)
-    if linha_resultado_contabil is None:
-        candidatos = df_acumulado[df_acumulado["Linha_Normalizada"].str.contains("resultado contabil", na=False, regex=False)]
-        if not candidatos.empty: linha_resultado_contabil = candidatos.sort_values("Ordem_Linha").iloc[0]["Linha"]
-    if linha_resultado_contabil is None: return None, []
-
-    valor_total = valor_pnl(df_acumulado, "Total", linha_resultado_contabil, "Realizado")
-    valor_consignado = valor_pnl(df_acumulado, "Consignado", linha_resultado_contabil, "Realizado")
-    valor_imobiliario = valor_pnl(df_acumulado, "Imobiliário", linha_resultado_contabil, "Realizado")
-    valor_banco_digital = valor_pnl(df_acumulado, "Banco Digital", linha_resultado_contabil, "Realizado")
-    valor_ajustes = valor_total - (valor_consignado + valor_imobiliario + valor_banco_digital)
-
-    if empresa_sel == "Banco":
-        componentes, total_base = [("Consignado", valor_consignado)], valor_consignado
-    elif empresa_sel == "Hipotecária":
-        componentes, total_base = [("Imobiliário", valor_imobiliario)], valor_imobiliario
-    else:
-        componentes = [("Consignado", valor_consignado), ("Imobiliário", valor_imobiliario)]
-        if abs(valor_banco_digital) > 0.5: componentes.append(("Banco Digital", valor_banco_digital))
-        if abs(valor_ajustes) > 0.5: componentes.append(("Ajustes / Outros", valor_ajustes))
-        total_base = valor_total
-
-    itens = []
-    base_pct = abs(total_base) if total_base not in (None, 0) else None
-    for nome, valor in componentes:
-        pct = (valor / base_pct) if base_pct else None
-        itens.append({"nome": nome, "valor": valor, "pct": pct})
-    return total_base, itens
-
-def card_composicao_resultado_total_acumulado(df_pnl_completo, periodo_atual, empresa_sel="Todos"):
-    total, itens = composicao_resultado_total_acumulado_produto(df_pnl_completo, periodo_atual, empresa_sel)
-    if total is None or not itens:
-        st.markdown('<div class="side-card composition-card"><div class="composition-title">Composição do Resultado Total acumulado</div><div class="composition-help">Não foi possível calcular a composição para o período selecionado.</div></div>', unsafe_allow_html=True)
-        return
-    html_rows = []
-    for item in itens:
-        pct = item["pct"] if item["pct"] is not None else 0.0
-        pct_texto = f"{pct * 100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
-        largura = max(3, abs(pct) * 100)
-        html_rows.append(f'<div class="composition-row"><div class="composition-head"><div class="composition-name">{item["nome"]}</div><div style="display:flex; gap:8px; align-items:baseline;"><div class="composition-value">{formatar_moeda(item["valor"])}</div><div class="composition-pct">{pct_texto}</div></div></div><div class="composition-bar-wrap"><div class="composition-bar-fill" style="width:{largura:.1f}%"></div></div></div>')
-    st.markdown(f'<div class="side-card composition-card"><div class="composition-title">Composição do Resultado Total acumulado</div>{"".join(html_rows)}<div class="composition-help">Composição do acumulado de jan/2026 até {periodo_atual}</div></div>', unsafe_allow_html=True)
-
-def filtrar_tabela_resultado_por_empresa(tabela, empresa_sel):
-    if empresa_sel == "Todos" or tabela.empty: return tabela
-    col_nome = tabela.columns[0]
-    base = tabela.copy()
-    base["_nome_norm"] = base[col_nome].astype(str).map(normalizar_texto)
-    banco_set = {"banco", "equiv patr", "jcp dividendos", "resultado banco"}
-    if empresa_sel == "Banco": filtrada = base[base["_nome_norm"].isin(banco_set) | base["_nome_norm"].str.contains("banco", regex=False, na=False)]
-    else: filtrada = base[~base["_nome_norm"].isin(banco_set) & ~base["_nome_norm"].eq("resultado total")]
-    return filtrada.drop(columns=["_nome_norm"])
-
-def adicionar_coluna_variacao_tabela(tabela, periodos_df, periodo_atual):
-    coluna_delta = "Δ mês anterior"
-    tabela = tabela.copy()
-    periodo_ant = periodo_anterior(periodos_df, periodo_atual)
-    if periodo_ant is None or periodo_ant not in tabela.columns or periodo_atual not in tabela.columns:
-        tabela[coluna_delta] = pd.NA
-        return tabela, coluna_delta
-    atual = pd.to_numeric(tabela[periodo_atual], errors="coerce")
-    anterior = pd.to_numeric(tabela[periodo_ant], errors="coerce")
-    tabela[coluna_delta] = (atual - anterior) / anterior.abs()
-    tabela.loc[anterior.eq(0) | anterior.isna(), coluna_delta] = pd.NA
-    return tabela, coluna_delta
-
-def carregar_comparativo_2025(arquivo):
-    try:
-        bruto = pd.read_excel(arquivo, sheet_name="Comparativo 2026 x 2025", header=None, engine="openpyxl")
-    except Exception:
-        bruto = pd.read_excel(arquivo, sheet_name="Comparativo 2025", header=None, engine="openpyxl")
-
-    label_cols = []
-    for col in bruto.columns:
-        for r in range(min(50, len(bruto))):
-            val = normalizar_texto(bruto.iat[r, col])
-            if val in ["receitas", "resultado contabil", "resultado contábil", "despesas totais"]:
-                if col not in label_cols: label_cols.append(col)
-                break
-    if not label_cols: label_cols = [0, 12]
-    elif len(label_cols) == 1: label_cols.append(label_cols[0] + 12)
-
-    col_26, col_25 = label_cols[0], label_cols[1] if len(label_cols) > 1 else None
-
-    def extrair_bloco(label_col, ano):
-        registros_bloco = []
-        if label_col is None or label_col >= len(bruto.columns): return registros_bloco
-        col_consig = col_imob = col_total = None
-        for r_idx in range(min(5, len(bruto))):
-            for c_idx in range(label_col + 1, min(label_col + 15, len(bruto.columns))):
-                val = normalizar_texto(bruto.iat[r_idx, c_idx])
-                if val == "consignado" and col_consig is None: col_consig = c_idx
-                elif val == "imobiliario" and col_imob is None: col_imob = c_idx
-                elif val == "total" and col_total is None: col_total = c_idx
-        if col_consig is None: col_consig = label_col + 1
-        if col_imob is None: col_imob = label_col + 4
-        if col_total is None: col_total = label_col + 7
-
-        blocos = [
-            {"Produto": "Consignado", "realizado_col": col_consig, "orcado_col": col_consig + 1},
-            {"Produto": "Imobiliário", "realizado_col": col_imob, "orcado_col": col_imob + 1},
-            {"Produto": "Total", "realizado_col": col_total, "orcado_col": col_total + 1},
-        ]
-        for bloco in blocos:
-            for idx_row in bruto.index:
-                linha = bruto.iat[idx_row, label_col]
-                linha_norm = normalizar_texto(linha)
-                if not linha_norm: continue
-                realizado, orcado = pd.NA, pd.NA
-                if bloco["realizado_col"] < len(bruto.columns):
-                    try: 
-                        v = safe_float(bruto.iat[idx_row, bloco["realizado_col"]])
-                        if pd.notna(v): realizado = float(v)
-                    except: pass
-                if bloco["orcado_col"] < len(bruto.columns):
-                    try:
-                        v = safe_float(bruto.iat[idx_row, bloco["orcado_col"]])
-                        if pd.notna(v): orcado = float(v)
-                    except: pass
-                registros_bloco.append({"Ano": ano, "Produto": bloco["Produto"], "Linha": str(linha).strip(), "Linha_Normalizada": linha_norm, "Realizado": realizado, "Orçado": orcado, "Ordem": int(idx_row)})
-        return registros_bloco
-
-    registros = []
-    registros.extend(extrair_bloco(col_26, 2026))
-    if col_25 is not None: registros.extend(extrair_bloco(col_25, 2025))
-    df = pd.DataFrame(registros)
-    if df.empty: return df
-    return df.sort_values(["Ano", "Produto", "Ordem"]).drop_duplicates(["Ano", "Produto", "Linha_Normalizada"], keep="first")
-
-def carregar_2025_acumulado(arquivo):
-    try:
-        bruto = pd.read_excel(arquivo, sheet_name="2025 Acumulado", header=None, engine="openpyxl")
-    except Exception:
-        return pd.DataFrame()
-    label_col = 0
-    for col in bruto.columns:
-        for r in range(min(50, len(bruto))):
-            if normalizar_texto(bruto.iat[r, col]) in ["receitas", "resultado contabil", "resultado contábil"]:
-                label_col = col
-                break
-        if label_col != 0: break
-    col_total = label_col + 7
-    for r_idx in range(min(5, len(bruto))):
-        for c_idx in range(label_col + 1, min(label_col + 15, len(bruto.columns))):
-            if normalizar_texto(bruto.iat[r_idx, c_idx]) == "total":
-                col_total = c_idx
-                break
-    col_real = col_total
-    col_orc = col_total + 1
-    col_delta = col_total + 2
-
-    registros = []
-    for idx_row in bruto.index:
-        linha = bruto.iat[idx_row, label_col] if label_col < len(bruto.columns) else None
-        linha_norm = normalizar_texto(linha)
-        if not linha_norm: continue
-        realizado_total = safe_float(bruto.iat[idx_row, col_real]) if col_real < len(bruto.columns) else pd.NA
-        orcado_total = safe_float(bruto.iat[idx_row, col_orc]) if col_orc < len(bruto.columns) else pd.NA
-        delta_total = safe_float(bruto.iat[idx_row, col_delta]) if col_delta < len(bruto.columns) else pd.NA
-        registros.append({"Linha": str(linha).strip(), "Linha_Normalizada": linha_norm, "Realizado": realizado_total, "Orçado": orcado_total, "Δ Orçado": delta_total, "Ordem": int(idx_row)})
-    df = pd.DataFrame(registros)
-    if df.empty: return df
-    return df.sort_values("Ordem").drop_duplicates(["Linha_Normalizada"], keep="first")
-
-def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
-    linhas_ordem = ["RECEITAS", "Operações de Crédito", "DESPESAS DE ORIGINAÇÃO", "DESPESAS TOTAIS", "Provisões", "MARGEM INTERMEDIAÇÃO", "MG INTERMEDIAÇÃO LIQ", "MG CONTRIBUIÇÃO DIRETA", "RESULTADO ANTES IMPOSTO", "RESULTADO CONTÁBIL", "Carteira de Crédito Média", "PL Médio"]
-    componentes_desp_totais = ["despesas de originacao", "provisoes", "despesas administrativas", "despesas administrativas diretas", "desp administrativas indiretas", "amortizacao estoque projeto banco"]
-    if df_2025_acumulado is None: df_2025_acumulado = pd.DataFrame()
-
-    def somar_componentes_desp(df_ano, ano, acumulado_df=None):
-        soma_26, soma_25, soma_25a = 0.0, 0.0, 0.0
-        encontrou_26, encontrou_25, encontrou_25a = False, False, False
-        for norm_comp in componentes_desp_totais:
-            b26 = df_comp[(df_comp["Ano"] == 2026) & (df_comp["Produto"] == "Total") & (df_comp["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False))]
-            b25 = df_comp[(df_comp["Ano"] == 2025) & (df_comp["Produto"] == "Total") & (df_comp["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False))]
-            if not b26.empty and pd.notna(b26["Realizado"].iloc[0]): soma_26 += b26["Realizado"].iloc[0]; encontrou_26 = True
-            if not b25.empty and pd.notna(b25["Realizado"].iloc[0]): soma_25 += b25["Realizado"].iloc[0]; encontrou_25 = True
-            if not acumulado_df.empty:
-                ba = acumulado_df[acumulado_df["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False)]
-                if not ba.empty and pd.notna(ba["Realizado"].iloc[0]): soma_25a += ba["Realizado"].iloc[0]; encontrou_25a = True
-        return (soma_26 if encontrou_26 else pd.NA, soma_25 if encontrou_25 else pd.NA, soma_25a if encontrou_25a else pd.NA)
-
-    linhas = []
-    for ordem, linha_ref in enumerate(linhas_ordem):
-        linha_norm = normalizar_texto(linha_ref)
-        if linha_norm == normalizar_texto("DESPESAS TOTAIS"): v26, v25, v25_acum = somar_componentes_desp(df_comp, 2026, df_2025_acumulado)
-        else:
-            b25 = df_comp[(df_comp["Ano"] == 2025) & (df_comp["Produto"] == "Total")]
-            b26 = df_comp[(df_comp["Ano"] == 2026) & (df_comp["Produto"] == "Total")]
-            def get_val(df_subset, l_norm, is_2026=False):
-                if is_2026 and "carteira" in l_norm: return 1995139307.0
-                if not is_2026:
-                    if "comissao" in l_norm: return -2314689.0
-                    if "amortizacao" in l_norm: return -3247662.0
-                r = df_subset[df_subset["Linha_Normalizada"] == l_norm]
-                if not r.empty and pd.notna(r["Realizado"].iloc[0]): return r["Realizado"].iloc[0]
-                if "carteira" in l_norm: r = df_subset[df_subset["Linha_Normalizada"].str.contains("carteira", na=False)]
-                elif "pl medio" in l_norm: r = df_subset[df_subset["Linha_Normalizada"].str.contains("pl medio", na=False)]
-                elif "comissao" in l_norm: r = df_subset[df_subset["Linha_Normalizada"].str.contains("comissao", na=False)]
-                elif "amortizacao" in l_norm: r = df_subset[df_subset["Linha_Normalizada"].str.contains("amortizacao", na=False)]
-                elif "impostos diretos" in l_norm: r = df_subset[df_subset["Linha_Normalizada"].str.contains("impostos diretos", na=False)]
-                else: return pd.NA
-                if not r.empty:
-                    for val in r["Realizado"]:
-                        if pd.notna(val): return val
-                return pd.NA
-            v25 = get_val(b25, linha_norm, False)
-            v26 = get_val(b26, linha_norm, True)
-            v25_acum = pd.NA
-            if not df_2025_acumulado.empty and "Linha_Normalizada" in df_2025_acumulado.columns:
-                b_acum = df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"] == linha_norm]
-                if not b_acum.empty and pd.notna(b_acum["Realizado"].iloc[0]): v25_acum = b_acum["Realizado"].iloc[0]
-                else:
-                    if "carteira" in linha_norm: b_acum = df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"].str.contains("carteira", na=False)]
-                    elif "pl medio" in linha_norm: b_acum = df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"].str.contains("pl medio", na=False)]
-                    elif "comissao" in linha_norm: b_acum = df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"].str.contains("comissao", na=False)]
-                    elif "amortizacao" in linha_norm: b_acum = df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"].str.contains("amortizacao", na=False)]
-                    elif "impostos diretos" in linha_norm: b_acum = df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"].str.contains("impostos diretos", na=False)]
-                    if not b_acum.empty: 
-                        for val in b_acum["Realizado"]:
-                            if pd.notna(val): v25_acum = val; break
-
-        delta_rs = v26 - v25 if pd.notna(v25) and pd.notna(v26) else pd.NA
-        delta_pct = delta_rs / abs(v25) if pd.notna(delta_rs) and v25 not in [0, 0.0] and pd.notna(v25) else pd.NA
-        alcance = v26 / abs(v25_acum) if pd.notna(v25_acum) and v25_acum not in [0, 0.0] and pd.notna(v26) else pd.NA
-        ambos_neg = pd.notna(v25) and pd.notna(v26) and float(v25) < 0 and float(v26) < 0
-        if ambos_neg: delta_bad = abs(float(v26)) > abs(float(v25)) if pd.notna(delta_rs) else False
-        elif pd.notna(v25) and pd.notna(v26): delta_bad = float(v26) < float(v25)
-        else: delta_bad = False
-        linhas.append({"Linha": linha_ref, "2025": v25, "2026": v26, "2026 Acumulado": v26, "2025 Acumulado": v25_acum, "Δ R$": delta_rs, "Δ %": delta_pct, "Alcance 2025": alcance, "Ordem": ordem, "_delta_bad": delta_bad, "_ambos_neg": ambos_neg})
-    return pd.DataFrame(linhas)
-
-def tabela_html_comparativo(df):
-    html = ['<div class="table-wrap"><table class="dash-table">']
-    cols = ["Linha", "2025", "2026", "Δ R$", "Δ %", "2025 Acumulado", "Alcance 2025"]
-    titulos = {"Linha": "Linha", "2025": "Jan-Mai 25", "2026": "Jan-Mai 26", "Δ R$": "Δ R$", "Δ %": "Δ %", "2025 Acumulado": "2025 Acumulado", "Alcance 2025": "Alcance 2025"}
-    html.append("<thead><tr>")
-    for col in cols: html.append(f"<th>{titulos.get(col, col)}</th>")
-    html.append("</tr></thead><tbody>")
-    for _, row in df.iterrows():
-        row_cls = ' class="total-row"' if normalizar_texto(row["Linha"]) in ["resultado contabil", "resultado contábil"] else ""
-        html.append(f"<tr{row_cls}>")
-        for col in cols:
-            valor = row[col]
-            classes = []
-            if col in ["2025", "2026", "Δ R$", "2025 Acumulado"]:
-                texto = formatar_numero(valor)
-                if pd.notna(valor) and valor < 0: classes.append("neg-value")
-            elif col in ["Δ %", "Alcance 2025"]:
-                texto = formatar_percentual_simples(valor)
-                if col == "Δ %" and pd.notna(valor):
-                    ambos_neg = row.get("_ambos_neg", False)
-                    delta_bad = row.get("_delta_bad", False)
-                    valor_exibir = -float(valor) if ambos_neg else float(valor)
-                    sinal = "+" if valor_exibir >= 0 else "−"
-                    pct = f"{abs(valor_exibir) * 100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
-                    texto = f"{sinal}{pct}"
-                    classes.append("delta-negative" if delta_bad else "delta-positive")
-            else: texto = str(valor)
-            cls = f' class="{" ".join(classes)}"' if classes else ""
-            html.append(f"<td{cls}>{texto}</td>")
-        html.append("</tr>")
-    html.append("</tbody></table></div>")
-    return "".join(html)
-
-def obter_linha_comparativo(df_comp_principais, linha_ref):
-    linha_norm = normalizar_texto(linha_ref)
-    res = df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).eq(linha_norm)]
-    if not res.empty: return res
-    if "carteira" in linha_norm: res = df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).str.contains("carteira", na=False)]
-    if res.empty and "pl medio" in linha_norm: res = df_comp_principais[df_comp_principais["Linha"].map(normalizar_texto).str.contains("pl medio", na=False)]
-    return res
 
 
 # ==============================================================================
@@ -1911,7 +1664,8 @@ if arquivo:
                         if l not in linhas_mapeadas: linhas_mapeadas.append(l)
                         break
             for l in linhas_principais:
-                if l not in linhas_mapeadas: linhas_mapeadas.append(l)
+                if l not in linhas_mapeadas:
+                    linhas_mapeadas.append(l)
 
             for inicio in range(0, len(linhas_mapeadas), 3):
                 if inicio > 0: st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
