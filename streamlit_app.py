@@ -365,6 +365,14 @@ CSS = """
 st.markdown(CSS, unsafe_allow_html=True)
 
 
+def get_file_hash(arquivo):
+    if isinstance(arquivo, Path):
+        return arquivo.stat().st_mtime
+    if arquivo is not None:
+        return arquivo.size
+    return 0
+
+
 def normalizar_texto(valor):
     if pd.isna(valor):
         return ""
@@ -641,7 +649,7 @@ def card(titulo, valor, ajuda="", variacao=None, variacao_label="Δ mês anterio
 
 
 @st.cache_data(show_spinner=False)
-def carregar_resultado(arquivo):
+def carregar_resultado(arquivo, cache_buster=None):
     bruto = pd.read_excel(arquivo, sheet_name=ABA_RESULTADO, header=None, engine="openpyxl")
     bruto = bruto.dropna(how="all")
 
@@ -715,7 +723,7 @@ def carregar_resultado(arquivo):
 
 
 @st.cache_data(show_spinner=False)
-def carregar_base_dash(arquivo):
+def carregar_base_dash(arquivo, cache_buster=None):
     df = pd.read_excel(arquivo, sheet_name=ABA_BASE, engine="openpyxl")
     df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
     for col in ["Visao", "Linha_PnL", "Produto", "Metrica", "Periodo"]:
@@ -740,7 +748,7 @@ def obter_periodos_pnl_mensal_anualizado(arquivo):
             if normalizar_texto(bruto.loc[idx, col]) != "data base":
                 continue
 
-            for c_data in range(col + 1, min(col + 12, max(bruto.columns) + 1)):
+            for c_data in range(col + 1, max(bruto.columns) + 1):
                 if c_data not in bruto.columns:
                     continue
 
@@ -771,7 +779,7 @@ def obter_periodos_pnl_mensal_anualizado(arquivo):
 
 
 @st.cache_data(show_spinner=False)
-def carregar_pnl_mensal(arquivo):
+def carregar_pnl_mensal(arquivo, cache_buster=None):
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Mensal - Anualizado", header=None, engine="openpyxl")
     except Exception:
@@ -792,7 +800,7 @@ def carregar_pnl_mensal(arquivo):
             col_rotulo = col
 
             data_base = None
-            for c_data in range(col + 1, min(col + 12, max(bruto.columns) + 1)):
+            for c_data in range(col + 1, max(bruto.columns) + 1):
                 if c_data in bruto.columns:
                     data_base = converter_periodo(bruto.loc[linha_data, c_data])
                     if data_base is not None:
@@ -802,7 +810,7 @@ def carregar_pnl_mensal(arquivo):
                 continue
 
             produtos_encontrados = {}
-            for c_prod in range(col + 1, min(col + 12, max(bruto.columns) + 1)):
+            for c_prod in range(col + 1, max(bruto.columns) + 1):
                 if c_prod not in bruto.columns:
                     continue
 
@@ -823,7 +831,7 @@ def carregar_pnl_mensal(arquivo):
             blocos = []
 
             for i, (produto, col_inicio) in enumerate(produtos_ordenados):
-                col_fim = produtos_ordenados[i + 1][1] if i + 1 < len(produtos_ordenados) else min(col + 12, max(bruto.columns) + 1)
+                col_fim = produtos_ordenados[i + 1][1] if i + 1 < len(produtos_ordenados) else max(bruto.columns) + 1
 
                 for c_met in range(col_inicio, col_fim):
                     if c_met not in bruto.columns:
@@ -905,7 +913,7 @@ def carregar_pnl_mensal(arquivo):
 
 
 @st.cache_data(show_spinner=False)
-def carregar_pnl_acumulado_oficial_completo(arquivo):
+def carregar_pnl_acumulado_oficial_completo(arquivo, cache_buster=None):
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
     except Exception:
@@ -1519,7 +1527,7 @@ def variacao_pnl_acumulado_vs_2025(df_comp_2025, produto, linha, valor_ytd_atual
     return (float(valor_ytd_atual) - valor_2025) / abs(valor_2025)
 
 
-def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None):
+def render_pnl_page(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=None):
     periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)
 
     if pagina == "Acumulado":
@@ -1528,7 +1536,7 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
         if not periodos_pnl:
             periodos_pnl = obter_periodos_pnl_mensal_anualizado(arquivo)
 
-        mes_para_trimestre = {3: "1º Trim.", 4: "1º Quad.", 5: "Jan-Mai", 6: "1º Sem.", 9: "9M", 12: "Ano"}
+        mes_para_trimestre = {3: "1º Trim.", 4: "Jan-Abr", 5: "Jan-Mai", 6: "1º Sem.", 9: "9M", 12: "Ano"}
         label_para_periodo = {}
         lista_labels_trimestre = []
         for p in periodos_pnl:
@@ -3151,14 +3159,15 @@ upload = st.sidebar.file_uploader("Atualizar base", type=["xlsx"])
 arquivo = upload if upload else (arquivo_local if arquivo_local.exists() else None)
 
 if arquivo:
+    file_hash = get_file_hash(arquivo)
     try:
-        df_resultado = carregar_resultado(arquivo)
+        df_resultado = carregar_resultado(arquivo, file_hash)
     except Exception as erro:
         st.error(f"Erro ao carregar a aba RESULTADO: {erro}")
         st.stop()
 
     try:
-        df_pnl_completo_global = carregar_pnl_mensal(arquivo)
+        df_pnl_completo_global = carregar_pnl_mensal(arquivo, file_hash)
         df_pnl_completo_global = garantir_linha_despesas_administrativas(df_pnl_completo_global)
         erro_pnl_global = None
     except Exception as erro_pnl:
