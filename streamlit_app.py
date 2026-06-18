@@ -2425,6 +2425,7 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         "MG INTERMEDIAÇÃO LIQ",
         "MG CONTRIBUIÇÃO DIRETA",
         "RESULTADO ANTES IMPOSTO",
+        "Impostos (IR/CSLL)",
         "RESULTADO CONTÁBIL",
         "Carteira de Crédito Média",
         "PL Médio",
@@ -2439,6 +2440,8 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         "despesas administrativas diretas",
         "desp administrativas indiretas",
         "amortizacao",
+        "comissao",
+        "impostos diretos",
     ]
 
     if df_2025_acumulado is None:
@@ -2453,8 +2456,11 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
         encontrou_25a = False
 
         for norm_comp in componentes_desp_totais:
-            b26 = df_comp[(df_comp["Ano"] == 2026) & (df_comp["Produto"] == "Total") & (df_comp["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False))]
-            b25 = df_comp[(df_comp["Ano"] == 2025) & (df_comp["Produto"] == "Total") & (df_comp["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False))]
+            # ~"receita" garante que "comissao" pegue a despesa "Comissão",
+            # e não a "Receita Comissão CRI" (que também contém "comissão").
+            sem_receita = ~df_comp["Linha_Normalizada"].str.contains("receita", na=False, regex=False)
+            b26 = df_comp[(df_comp["Ano"] == 2026) & (df_comp["Produto"] == "Total") & (df_comp["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False)) & sem_receita]
+            b25 = df_comp[(df_comp["Ano"] == 2025) & (df_comp["Produto"] == "Total") & (df_comp["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False)) & sem_receita]
 
             if not b26.empty and pd.notna(b26["Realizado"].iloc[0]):
                 soma_26 += b26["Realizado"].iloc[0]
@@ -2464,7 +2470,7 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
                 encontrou_25 = True
 
             if not acumulado_df.empty:
-                ba = acumulado_df[acumulado_df["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False)]
+                ba = acumulado_df[acumulado_df["Linha_Normalizada"].str.contains(norm_comp, na=False, regex=False) & ~acumulado_df["Linha_Normalizada"].str.contains("receita", na=False, regex=False)]
                 if not ba.empty and pd.notna(ba["Realizado"].iloc[0]):
                     soma_25a += ba["Realizado"].iloc[0]
                     encontrou_25a = True
