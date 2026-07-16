@@ -19,6 +19,22 @@ ARQUIVO_PADRAO = "BASE_DASHBOARD_PL_2026.xlsx"
 ABA_RESULTADO = "RESULTADO"
 ABA_BASE = "BASE_DASH"
 DATA_MINIMA_DASH = pd.Timestamp(2026, 1, 1)
+
+# Por padrão, o Streamlit calcula o hash de cache com base na representação em
+# string de um Path (o caminho do arquivo), e não no conteúdo dele. Como a
+# base mensal sempre é salva com o MESMO nome de arquivo, isso fazia o cache
+# não invalidar quando só o conteúdo (mês novo) mudava — as abas com
+# @st.cache_data continuavam servindo os dados do mês anterior. Aqui o hash
+# passa a considerar também a data de modificação e o tamanho do arquivo.
+def _hash_arquivo_path(caminho):
+    try:
+        stat = caminho.stat()
+        return (str(caminho), stat.st_mtime_ns, stat.st_size)
+    except Exception:
+        return str(caminho)
+
+
+HASH_FUNCS_ARQUIVO = {Path: _hash_arquivo_path}
  
 CSS = """
 <style>
@@ -594,7 +610,7 @@ def nome_periodo(data):
     return f"{meses[data.month - 1]}/{data.year}"
  
  
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=HASH_FUNCS_ARQUIVO)
 def obter_n_meses_acumulado(arquivo):
     # Descobre o nº de meses acumulados do ano lendo a data "Até:" do
     # cabeçalho das abas "P&L Acumulado" e "Comparativo 2026 x 2025". Como
@@ -674,7 +690,7 @@ def card(titulo, valor, ajuda="", variacao=None, variacao_label="Δ mês anterio
     )
  
  
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=HASH_FUNCS_ARQUIVO)
 def carregar_resultado(arquivo):
     bruto = pd.read_excel(arquivo, sheet_name=ABA_RESULTADO, header=None, engine="openpyxl")
     bruto = bruto.dropna(how="all")
@@ -795,7 +811,7 @@ def obter_periodos_pnl_mensal_anualizado(arquivo):
     return periodos
  
  
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=HASH_FUNCS_ARQUIVO)
 def carregar_pnl_mensal(arquivo):
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Mensal - Anualizado", header=None, engine="openpyxl")
@@ -947,7 +963,7 @@ def carregar_pnl_mensal(arquivo):
     return df
  
  
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=HASH_FUNCS_ARQUIVO)
 def carregar_pnl_acumulado_oficial_completo(arquivo):
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
