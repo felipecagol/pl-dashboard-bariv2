@@ -594,6 +594,40 @@ def nome_periodo(data):
     return f"{meses[data.month - 1]}/{data.year}"
  
  
+@st.cache_data(show_spinner=False)
+def obter_n_meses_acumulado(arquivo):
+    # Descobre o nº de meses acumulados do ano lendo a data "Até:" do
+    # cabeçalho das abas "P&L Acumulado" e "Comparativo 2026 x 2025". Como
+    # o "De:" sempre é janeiro, o nº de meses é o próprio mês da data "Até:".
+    def _mes_ate(sheet_name):
+        try:
+            bruto = pd.read_excel(arquivo, sheet_name=sheet_name, header=None, engine="openpyxl")
+        except Exception:
+            return None
+        for r in range(min(5, len(bruto))):
+            for c in range(len(bruto.columns)):
+                if normalizar_texto(bruto.iat[r, c]) == "ate":
+                    for c2 in range(c + 1, len(bruto.columns)):
+                        candidato = bruto.iat[r, c2]
+                        if pd.notna(candidato):
+                            try:
+                                return pd.Timestamp(candidato).month
+                            except Exception:
+                                continue
+        return None
+
+    mes_pnl_acumulado = _mes_ate("P&L Acumulado")
+    mes_comparativo = _mes_ate("Comparativo 2026 x 2025")
+    if mes_comparativo is None:
+        mes_comparativo = _mes_ate("Comparativo 2025")
+
+    if mes_pnl_acumulado is not None:
+        return mes_pnl_acumulado
+    if mes_comparativo is not None:
+        return mes_comparativo
+    return 1
+
+
 def formatar_variacao(valor, label="Δ mês anterior"):
     try:
         valor = float(valor)
@@ -1586,7 +1620,7 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
  
             if pagina == "Acumulado":
                 variacao = variacao_pnl_acumulado_vs_2025(df_comp_2025, produto_sel_pnl, linha, realizado)
-                variacao_label = "vs Acum. 5M 25"
+                variacao_label = LABEL_VS_ACUM_25
             else:
                 variacao = variacao_pnl_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
                 variacao_label = "Δ mês anterior"
@@ -1712,7 +1746,7 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
                     var = None
             else:
                 var = None
-            label_var = "vs Acum. 5M 25"
+            label_var = LABEL_VS_ACUM_25
         else:
             var = variacao_pnl_mes_anterior(df_pnl_completo, row["Produto"], linha_resultado_contabil, data_sel_pnl)
             label_var = "vs mês ant."
@@ -2264,102 +2298,120 @@ def adicionar_coluna_variacao_tabela(tabela, periodos_df, periodo_atual):
     return tabela, coluna_delta
  
  
-def carregar_comparativo_2025(arquivo):
-    try:
-        bruto = pd.read_excel(arquivo, sheet_name="Comparativo 2026 x 2025", header=None, engine="openpyxl")
-    except Exception:
-        bruto = pd.read_excel(arquivo, sheet_name="Comparativo 2025", header=None, engine="openpyxl")
- 
-    label_cols = []
+def _detectar_label_col(bruto):
+    # Localiza a coluna onde ficam os nomes das linhas (ex.: "RECEITAS"),
+    # procurando por rotulos-ancora nas primeiras linhas da aba.
     for col in bruto.columns:
         for r in range(min(50, len(bruto))):
             val = normalizar_texto(bruto.iat[r, col])
             if val in ["receitas", "resultado contabil", "resultado contábil", "despesas totais"]:
-                if col not in label_cols:
-                    label_cols.append(col)
-                break
- 
-    if not label_cols:
-        label_cols = [0, 12]
-    elif len(label_cols) == 1:
-        label_cols.append(label_cols[0] + 12)
- 
-    col_26 = label_cols[0]
-    col_25 = label_cols[1]
- 
-    def detectar_cols_produto(label_col, prox_label_col):
-        # Localiza dinamicamente a coluna "Realizado" de cada produto dentro do
-        # bloco que comeca em label_col. Isso evita depender de offsets fixos,
-        # que quebram quando um bloco tem um produto a mais (ex.: "BANCO DIGITAL").
-        limite = prox_label_col if prox_label_col is not None else len(bruto.columns)
-        alvos = {"Consignado": "consignado", "Imobiliário": "imobiliario", "Total": "total"}
-        mapa = {}
-        for r in range(min(6, len(bruto))):
-            for c in range(label_col, limite):
-                nome = normalizar_texto(bruto.iat[r, c])
-                for produto, chave in alvos.items():
-                    if nome == chave and produto not in mapa:
-                        # No layout da planilha, o cabecalho do produto fica na
-                        # mesma coluna do "Realizado"; "Orçado" vem na coluna seguinte.
-                        mapa[produto] = {"realizado_col": c, "orcado_col": c + 1}
-        return mapa
- 
-    def extrair_bloco(label_col, prox_label_col, ano):
-        registros_bloco = []
-        if label_col is None or label_col >= len(bruto.columns):
-            return registros_bloco
- 
-        mapa_cols = detectar_cols_produto(label_col, prox_label_col)
-        blocos = [
-            {"Produto": produto, **cols}
-            for produto, cols in mapa_cols.items()
-            if produto in ("Consignado", "Imobiliário", "Total")
-        ]
- 
-        for bloco in blocos:
-            for idx_row in bruto.index:
-                linha = bruto.iat[idx_row, label_col]
-                linha_norm = normalizar_texto(linha)
-                if not linha_norm:
-                    continue
-                
-                realizado = pd.NA
-                if bloco["realizado_col"] < len(bruto.columns):
-                    try:
-                        v = bruto.iat[idx_row, bloco["realizado_col"]]
-                        if pd.notna(v): realizado = float(v)
-                    except: pass
-                    
-                orcado = pd.NA
-                if bloco["orcado_col"] < len(bruto.columns):
-                    try:
-                        v = bruto.iat[idx_row, bloco["orcado_col"]]
-                        if pd.notna(v): orcado = float(v)
-                    except: pass
-                    
-                registros_bloco.append({
-                    "Ano": ano,
-                    "Produto": bloco["Produto"],
-                    "Linha": str(linha).strip(),
-                    "Linha_Normalizada": linha_norm,
-                    "Realizado": realizado,
-                    "Orçado": orcado,
-                    "Ordem": int(idx_row),
-                })
+                return col
+    return None
+
+
+def _detectar_cols_produto(bruto, label_col):
+    # Localiza dinamicamente a coluna "Realizado" de cada produto dentro do
+    # bloco. Isso evita depender de offsets fixos, que quebram quando um
+    # bloco tem um produto a mais/a menos (ex.: coluna extra "BANCO DIGITAL").
+    alvos = {"Consignado": "consignado", "Imobiliário": "imobiliario", "Total": "total"}
+    mapa = {}
+    for r in range(min(6, len(bruto))):
+        for c in range(label_col, len(bruto.columns)):
+            nome = normalizar_texto(bruto.iat[r, c])
+            for produto, chave in alvos.items():
+                if nome == chave and produto not in mapa:
+                    # No layout da planilha, o cabecalho do produto fica na
+                    # mesma coluna do "Realizado"; "Orçado" vem na coluna seguinte.
+                    mapa[produto] = {"realizado_col": c, "orcado_col": c + 1}
+    return mapa
+
+
+def _extrair_bloco_comparativo(bruto, label_col, ano):
+    registros_bloco = []
+    if bruto is None or bruto.empty or label_col is None or label_col >= len(bruto.columns):
         return registros_bloco
- 
+
+    mapa_cols = _detectar_cols_produto(bruto, label_col)
+    blocos = [
+        {"Produto": produto, **cols}
+        for produto, cols in mapa_cols.items()
+        if produto in ("Consignado", "Imobiliário", "Total")
+    ]
+
+    for bloco in blocos:
+        for idx_row in bruto.index:
+            linha = bruto.iat[idx_row, label_col]
+            linha_norm = normalizar_texto(linha)
+            if not linha_norm:
+                continue
+
+            realizado = pd.NA
+            if bloco["realizado_col"] < len(bruto.columns):
+                try:
+                    v = bruto.iat[idx_row, bloco["realizado_col"]]
+                    if pd.notna(v): realizado = float(v)
+                except: pass
+
+            orcado = pd.NA
+            if bloco["orcado_col"] < len(bruto.columns):
+                try:
+                    v = bruto.iat[idx_row, bloco["orcado_col"]]
+                    if pd.notna(v): orcado = float(v)
+                except: pass
+
+            registros_bloco.append({
+                "Ano": ano,
+                "Produto": bloco["Produto"],
+                "Linha": str(linha).strip(),
+                "Linha_Normalizada": linha_norm,
+                "Realizado": realizado,
+                "Orçado": orcado,
+                "Ordem": int(idx_row),
+            })
+    return registros_bloco
+
+
+def carregar_comparativo_2025(arquivo):
+    # O comparativo 2026 x 2025 e montado cruzando DUAS abas, pois a aba
+    # "Comparativo 2026 x 2025" hoje traz apenas o bloco de 2025 (Realizado x
+    # Orçado do mesmo nº de meses do ano corrente), enquanto o acumulado de
+    # 2026 vem da aba "P&L Acumulado". As colunas de cada produto
+    # (Consignado/Imobiliário/Total) sao detectadas de forma dinamica em cada
+    # bloco, pois o nº de colunas pode variar entre eles (ex.: bloco com uma
+    # coluna extra "BANCO DIGITAL").
+    try:
+        bruto_2025 = pd.read_excel(arquivo, sheet_name="Comparativo 2026 x 2025", header=None, engine="openpyxl")
+    except Exception:
+        try:
+            bruto_2025 = pd.read_excel(arquivo, sheet_name="Comparativo 2025", header=None, engine="openpyxl")
+        except Exception:
+            bruto_2025 = pd.DataFrame()
+
+    try:
+        bruto_2026 = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
+    except Exception:
+        bruto_2026 = pd.DataFrame()
+
+    label_col_2025 = _detectar_label_col(bruto_2025) if not bruto_2025.empty else None
+    if label_col_2025 is None:
+        label_col_2025 = 0
+
+    label_col_2026 = _detectar_label_col(bruto_2026) if not bruto_2026.empty else None
+    if label_col_2026 is None:
+        label_col_2026 = 1  # convenção da aba "P&L Acumulado": rótulos na coluna B
+
     registros = []
-    registros.extend(extrair_bloco(col_26, col_25, 2026))
-    if col_25 is not None:
-        registros.extend(extrair_bloco(col_25, None, 2025))
- 
+    registros.extend(_extrair_bloco_comparativo(bruto_2026, label_col_2026, 2026))
+    registros.extend(_extrair_bloco_comparativo(bruto_2025, label_col_2025, 2025))
+
     df = pd.DataFrame(registros)
     if df.empty:
         return df
- 
+
     return df.sort_values(["Ano", "Produto", "Ordem"]).drop_duplicates(
         ["Ano", "Produto", "Linha_Normalizada"], keep="first"
     )
+
  
  
 def carregar_2025_acumulado(arquivo):
@@ -2592,8 +2644,8 @@ def tabela_html_comparativo(df):
     cols = ["Linha", "2025", "2026", "Δ R$", "Δ %", "2025 Acumulado", "Alcance 2025"]
     titulos = {
         "Linha": "Linha",
-        "2025": "Acum. 5M 25",
-        "2026": "Acum. 5M 26",
+        "2025": LABEL_ACUM_25,
+        "2026": LABEL_ACUM_26,
         "Δ R$": "Δ R$",
         "Δ %": "Δ %",
         "2025 Acumulado": "2025 Acumulado",
@@ -2719,7 +2771,7 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
             mode="gauge+number",
             value=alcance_pct,
             number={"suffix": "%", "font": {"size": 64, "color": "#ffffff", "family": "Arial Black"}},
-            title={"text": "<b>Resultado Contábil Acum. 5M 26 x acumulado de 2025</b>", "font": {"size": 22, "color": "#ffffff"}},
+            title={"text": f"<b>Resultado Contábil {LABEL_ACUM_26} x acumulado de 2025</b>", "font": {"size": 22, "color": "#ffffff"}},
             gauge={
                 "axis": {"range": [0, eixo_max], "tickformat": ".0f", "tickfont": {"color": "#ffffff", "size": 14}},
                 "bar": {"color": cor_barra, "thickness": 0.38},
@@ -2746,7 +2798,7 @@ def grafico_alcance_resultado_contabil(valor_2026, valor_base_2025):
         showarrow=False,
         align="center",
         text=(
-            f"<b>Realizado no Acum. 5M 26:</b> {formatar_moeda(realizado)}<br>"
+            f"<b>Realizado no {LABEL_ACUM_26}:</b> {formatar_moeda(realizado)}<br>"
             f"<b>Acumulado de 2025:</b> {formatar_moeda(base)}<br>"
             f"{texto_status}"
         ),
@@ -2854,6 +2906,14 @@ try:
 except Exception as erro_pnl:
     df_pnl_completo_global = pd.DataFrame()
     erro_pnl_global = erro_pnl
+ 
+try:
+    N_MESES_ACUM = obter_n_meses_acumulado(arquivo)
+except Exception:
+    N_MESES_ACUM = 1
+LABEL_ACUM_26 = f"Acum. {N_MESES_ACUM}M 26"
+LABEL_ACUM_25 = f"Acum. {N_MESES_ACUM}M 25"
+LABEL_VS_ACUM_25 = f"vs {LABEL_ACUM_25}"
  
 periodos_disponiveis = (
     df_resultado[["Data", "Período"]]
@@ -3149,7 +3209,7 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
  
             if pagina == "Acumulado":
                 variacao = variacao_pnl_acumulado_vs_2025(df_comp_2025, produto_sel_pnl, linha, realizado)
-                variacao_label = "vs Acum. 5M 25"
+                variacao_label = LABEL_VS_ACUM_25
             else:
                 variacao = variacao_pnl_mes_anterior(df_pnl_completo, produto_sel_pnl, linha, data_sel_pnl)
                 variacao_label = "Δ mês anterior"
@@ -3276,7 +3336,7 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
                     var = None
             else:
                 var = None
-            label_var = "vs Acum. 5M 25"
+            label_var = LABEL_VS_ACUM_25
         else:
             var = variacao_pnl_mes_anterior(df_pnl_completo, row["Produto"], linha_resultado_contabil, data_sel_pnl)
             label_var = "vs mês ant."
@@ -3360,13 +3420,13 @@ with tab_comp_2025:
         if df_comp.empty or df_comp_principais.empty:
             st.info("Não encontrei dados suficientes na aba Comparativo 2026 x 2025.")
         else:
-            st.markdown('<div class="section-title">Comparativo Acum. 5M 26 x Acum. 5M 25</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="section-title">Comparativo {LABEL_ACUM_26} x {LABEL_ACUM_25}</div>', unsafe_allow_html=True)
  
             novos_cards_linha1 = [
-                ("Margem de Intermediação Acum. 5M 26", "MARGEM INTERMEDIAÇÃO"),
-                ("MG Intermediação Líq. Acum. 5M 26", "MG INTERMEDIAÇÃO LIQ"),
-                ("MG Contribuição Direta Acum. 5M 26", "MG CONTRIBUIÇÃO DIRETA"),
-                ("Resultado Antes do Imposto Acum. 5M 26", "RESULTADO ANTES IMPOSTO"),
+                (f"Margem de Intermediação {LABEL_ACUM_26}", "MARGEM INTERMEDIAÇÃO"),
+                (f"MG Intermediação Líq. {LABEL_ACUM_26}", "MG INTERMEDIAÇÃO LIQ"),
+                (f"MG Contribuição Direta {LABEL_ACUM_26}", "MG CONTRIBUIÇÃO DIRETA"),
+                (f"Resultado Antes do Imposto {LABEL_ACUM_26}", "RESULTADO ANTES IMPOSTO"),
             ]
             
             cols1 = st.columns(4)
@@ -3386,14 +3446,14 @@ with tab_comp_2025:
                             variacao_exibir = -variacao
                             cor_classe = "delta-negative"
                         card(titulo, valor_2026, ajuda=ajuda, variacao=variacao,
-                             variacao_label="vs Acum. 5M 25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
+                             variacao_label=LABEL_VS_ACUM_25, cor_classe=cor_classe, variacao_exibir=variacao_exibir)
  
             st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
  
             novos_cards_linha2 = [
-                ("Resultado Contábil Acum. 5M 26", "RESULTADO CONTÁBIL"),
-                ("Carteira de Crédito (Média) Acum. 5M 26", "Carteira de Crédito Média"),
-                ("PL Médio Acum. 5M 26", "PL Médio"),
+                (f"Resultado Contábil {LABEL_ACUM_26}", "RESULTADO CONTÁBIL"),
+                (f"Carteira de Crédito (Média) {LABEL_ACUM_26}", "Carteira de Crédito Média"),
+                (f"PL Médio {LABEL_ACUM_26}", "PL Médio"),
             ]
             
             cols2 = st.columns(3)
@@ -3414,7 +3474,7 @@ with tab_comp_2025:
                             variacao_exibir = -variacao
                             cor_classe = "delta-negative"
                         card(titulo, valor_2026, ajuda=ajuda, variacao=variacao,
-                             variacao_label="vs Acum. 5M 25", cor_classe=cor_classe, variacao_exibir=variacao_exibir)
+                             variacao_label=LABEL_VS_ACUM_25, cor_classe=cor_classe, variacao_exibir=variacao_exibir)
  
             st.markdown('<div class="card-row-spacer"></div>', unsafe_allow_html=True)
  
@@ -3431,7 +3491,7 @@ with tab_comp_2025:
                 else:
                     st.info("Não foi possível calcular o alcance do Resultado Contábil com a base atual.")
  
-            st.markdown('<div class="section-title">Acum. 5M 25 x Acum. 5M 26 por linha principal</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="section-title">{LABEL_ACUM_25} x {LABEL_ACUM_26} por linha principal</div>', unsafe_allow_html=True)
             
             termos_ocultos_grafico = ["carteira", "pl medio", "impostos diretos", "comissao", "amortizacao"]
             df_comp_grafico = df_comp_principais[~df_comp_principais["Linha"].map(normalizar_texto).str.contains('|'.join(termos_ocultos_grafico), regex=True, na=False)].copy()
