@@ -20,21 +20,31 @@ ABA_RESULTADO = "RESULTADO"
 ABA_BASE = "BASE_DASH"
 DATA_MINIMA_DASH = pd.Timestamp(2026, 1, 1)
 
-# Por padrão, o Streamlit calcula o hash de cache com base na representação em
-# string de um Path (o caminho do arquivo), e não no conteúdo dele. Como a
-# base mensal sempre é salva com o MESMO nome de arquivo, isso fazia o cache
-# não invalidar quando só o conteúdo (mês novo) mudava — as abas com
-# @st.cache_data continuavam servindo os dados do mês anterior. Aqui o hash
-# passa a considerar também a data de modificação e o tamanho do arquivo.
-def _hash_arquivo_path(caminho):
-    try:
-        stat = caminho.stat()
-        return (str(caminho), stat.st_mtime_ns, stat.st_size)
-    except Exception:
-        return str(caminho)
-
-
-HASH_FUNCS_ARQUIVO = {Path: _hash_arquivo_path}
+# A base mensal é sempre salva com o MESMO nome de arquivo. Sem uma chave de
+# versão explícita, o Streamlit acha que uma chamada com o mesmo "arquivo" é
+# idêntica à anterior e devolve do cache os dados do mês passado, mesmo com o
+# conteúdo do arquivo trocado (isso já aconteceu mesmo tentando personalizar
+# o hash de Path via hash_funcs — Path(...) na prática devolve um PosixPath/
+# WindowsPath, um subtipo, e não há garantia de que o Streamlit sempre casa
+# hash_funcs por subtipo). Por isso as funções com cache abaixo recebem um
+# parâmetro extra "versao" (string simples, sempre hasheada de forma
+# confiável), gerado por esta função a partir da data de modificação e do
+# tamanho do arquivo.
+def versao_arquivo(arquivo):
+    if isinstance(arquivo, Path):
+        try:
+            stat = arquivo.stat()
+            return f"{arquivo}:{stat.st_mtime_ns}:{stat.st_size}"
+        except Exception:
+            return str(arquivo)
+    nome = getattr(arquivo, "name", "upload")
+    tamanho = getattr(arquivo, "size", None)
+    if tamanho is None:
+        try:
+            tamanho = len(arquivo.getvalue())
+        except Exception:
+            tamanho = 0
+    return f"{nome}:{tamanho}"
  
 CSS = """
 <style>
@@ -610,8 +620,8 @@ def nome_periodo(data):
     return f"{meses[data.month - 1]}/{data.year}"
  
  
-@st.cache_data(show_spinner=False, hash_funcs=HASH_FUNCS_ARQUIVO)
-def obter_n_meses_acumulado(arquivo):
+@st.cache_data(show_spinner=False)
+def obter_n_meses_acumulado(arquivo, versao):
     # Descobre o nº de meses acumulados do ano lendo a data "Até:" do
     # cabeçalho das abas "P&L Acumulado" e "Comparativo 2026 x 2025". Como
     # o "De:" sempre é janeiro, o nº de meses é o próprio mês da data "Até:".
@@ -690,8 +700,8 @@ def card(titulo, valor, ajuda="", variacao=None, variacao_label="Δ mês anterio
     )
  
  
-@st.cache_data(show_spinner=False, hash_funcs=HASH_FUNCS_ARQUIVO)
-def carregar_resultado(arquivo):
+@st.cache_data(show_spinner=False)
+def carregar_resultado(arquivo, versao):
     bruto = pd.read_excel(arquivo, sheet_name=ABA_RESULTADO, header=None, engine="openpyxl")
     bruto = bruto.dropna(how="all")
  
@@ -811,8 +821,8 @@ def obter_periodos_pnl_mensal_anualizado(arquivo):
     return periodos
  
  
-@st.cache_data(show_spinner=False, hash_funcs=HASH_FUNCS_ARQUIVO)
-def carregar_pnl_mensal(arquivo):
+@st.cache_data(show_spinner=False)
+def carregar_pnl_mensal(arquivo, versao):
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Mensal - Anualizado", header=None, engine="openpyxl")
     except Exception:
@@ -963,8 +973,8 @@ def carregar_pnl_mensal(arquivo):
     return df
  
  
-@st.cache_data(show_spinner=False, hash_funcs=HASH_FUNCS_ARQUIVO)
-def carregar_pnl_acumulado_oficial_completo(arquivo):
+@st.cache_data(show_spinner=False)
+def carregar_pnl_acumulado_oficial_completo(arquivo, versao):
     try:
         bruto = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
     except Exception:
@@ -1566,7 +1576,7 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
     col_data, col_produto, col_espaco = st.columns([1, 1, 2.5])
     
     if pagina == "Acumulado":
-        df_pnl = carregar_pnl_acumulado_oficial_completo(arquivo)
+        df_pnl = carregar_pnl_acumulado_oficial_completo(arquivo, versao_arquivo(arquivo))
         df_pnl = garantir_linha_despesas_administrativas(df_pnl)
         if not df_pnl.empty:
             label_sel = df_pnl["Periodo"].iloc[0]
@@ -2901,6 +2911,10 @@ st.sidebar.title("Configurações")
 arquivo_local = Path(ARQUIVO_PADRAO)
 upload = st.sidebar.file_uploader("Atualizar base manualmente", type=["xlsx"])
  
+if st.sidebar.button("🔄 Forçar atualização da base"):
+    st.cache_data.clear()
+    st.rerun()
+ 
 if upload is not None:
     arquivo = upload
 elif arquivo_local.exists():
@@ -2909,14 +2923,21 @@ else:
     st.error(f"Arquivo '{ARQUIVO_PADRAO}' não encontrado no repositório.")
     st.stop()
  
+if isinstance(arquivo, Path) and arquivo.exists():
+    _stat = arquivo.stat()
+    _mtime_fmt = pd.Timestamp(_stat.st_mtime, unit="s").strftime("%d/%m/%Y %H:%M:%S")
+    st.sidebar.caption(f"Base: {arquivo.name} · modificado em {_mtime_fmt} · {_stat.st_size / 1024:.0f} KB")
+else:
+    st.sidebar.caption(f"Base carregada via upload manual: {getattr(arquivo, 'name', 'arquivo')}")
+ 
 try:
-    df_resultado = carregar_resultado(arquivo)
+    df_resultado = carregar_resultado(arquivo, versao_arquivo(arquivo))
 except Exception as erro:
     st.error(f"Erro ao carregar a aba RESULTADO: {erro}")
     st.stop()
  
 try:
-    df_pnl_completo_global = carregar_pnl_mensal(arquivo)
+    df_pnl_completo_global = carregar_pnl_mensal(arquivo, versao_arquivo(arquivo))
     df_pnl_completo_global = garantir_linha_despesas_administrativas(df_pnl_completo_global)
     erro_pnl_global = None
 except Exception as erro_pnl:
@@ -2924,7 +2945,7 @@ except Exception as erro_pnl:
     erro_pnl_global = erro_pnl
  
 try:
-    N_MESES_ACUM = obter_n_meses_acumulado(arquivo)
+    N_MESES_ACUM = obter_n_meses_acumulado(arquivo, versao_arquivo(arquivo))
 except Exception:
     N_MESES_ACUM = 1
 LABEL_ACUM_26 = f"Acum. {N_MESES_ACUM}M 26"
@@ -3155,7 +3176,7 @@ def _render_pnl_engine(df_pnl_completo, arquivo, pagina="Mensal", df_comp_2025=N
     col_data, col_produto, col_espaco = st.columns([1, 1, 2.5])
     
     if pagina == "Acumulado":
-        df_pnl = carregar_pnl_acumulado_oficial_completo(arquivo)
+        df_pnl = carregar_pnl_acumulado_oficial_completo(arquivo, versao_arquivo(arquivo))
         df_pnl = garantir_linha_despesas_administrativas(df_pnl)
         if not df_pnl.empty:
             label_sel = df_pnl["Periodo"].iloc[0]
