@@ -19,7 +19,7 @@ ARQUIVO_PADRAO = "BASE_DASHBOARD_PL_2026.xlsx"
 ABA_RESULTADO = "RESULTADO"
 ABA_BASE = "BASE_DASH"
 DATA_MINIMA_DASH = pd.Timestamp(2026, 1, 1)
-
+ 
 # A base mensal é sempre salva com o MESMO nome de arquivo. Sem uma chave de
 # versão explícita, o Streamlit acha que uma chamada com o mesmo "arquivo" é
 # idêntica à anterior e devolve do cache os dados do mês passado, mesmo com o
@@ -641,19 +641,19 @@ def obter_n_meses_acumulado(arquivo, versao):
                             except Exception:
                                 continue
         return None
-
+ 
     mes_pnl_acumulado = _mes_ate("P&L Acumulado")
     mes_comparativo = _mes_ate("Comparativo 2026 x 2025")
     if mes_comparativo is None:
         mes_comparativo = _mes_ate("Comparativo 2025")
-
+ 
     if mes_pnl_acumulado is not None:
         return mes_pnl_acumulado
     if mes_comparativo is not None:
         return mes_comparativo
     return 1
-
-
+ 
+ 
 def formatar_variacao(valor, label="Δ mês anterior"):
     try:
         valor = float(valor)
@@ -2333,8 +2333,8 @@ def _detectar_label_col(bruto):
             if val in ["receitas", "resultado contabil", "resultado contábil", "despesas totais"]:
                 return col
     return None
-
-
+ 
+ 
 def _detectar_cols_produto(bruto, label_col):
     # Localiza dinamicamente a coluna "Realizado" de cada produto dentro do
     # bloco. Isso evita depender de offsets fixos, que quebram quando um
@@ -2350,41 +2350,110 @@ def _detectar_cols_produto(bruto, label_col):
                     # mesma coluna do "Realizado"; "Orçado" vem na coluna seguinte.
                     mapa[produto] = {"realizado_col": c, "orcado_col": c + 1}
     return mapa
-
-
+ 
+ 
+def _detectar_shift_bloco_2025(bruto, label_col):
+    # Detecta, por identidade contábil, se os VALORES do bloco 2025 estão
+    # deslocados uma linha ABAIXO dos seus rótulos a partir de "Despesas
+    # Administrativas Diretas". Isso acontece quando a linha de total
+    # "Despesas Administrativas" perde o rótulo na planilha (linha "órfã"),
+    # empurrando os valores das linhas seguintes. O teste usa a coluna Total:
+    #   MG Contribuição Direta = MG Int. Liq + Desp. Adm. Diretas
+    #                            + Amortização + Comissão
+    # Primeiro tenta a leitura alinhada (deslocamento 0); se não fechar,
+    # tenta com +1 linha. Retorna a linha do RÓTULO a partir da qual aplicar
+    # o deslocamento, ou None se a leitura alinhada estiver correta (assim o
+    # ajuste se desativa sozinho quando a planilha voltar ao normal).
+    mapa = _detectar_cols_produto(bruto, label_col)
+    if "Total" not in mapa:
+        return None
+    col_total = mapa["Total"]["realizado_col"]
+    if col_total >= len(bruto.columns):
+        return None
+ 
+    idx_mgliq = idx_dir = idx_amort = idx_com = idx_mgc = None
+    for r in bruto.index:
+        norm = normalizar_texto(bruto.iat[r, label_col])
+        if not norm:
+            continue
+        if norm == "mg intermediacao liq" and idx_mgliq is None:
+            idx_mgliq = r
+        elif norm == "despesas administrativas diretas" and idx_dir is None:
+            idx_dir = r
+        elif norm == "comissao" and idx_com is None:
+            idx_com = r
+        elif norm == "mg contribuicao direta" and idx_mgc is None:
+            idx_mgc = r
+        elif idx_dir is not None and idx_amort is None and "amortizacao" in norm:
+            idx_amort = r
+ 
+    if None in (idx_mgliq, idx_dir, idx_amort, idx_com, idx_mgc):
+        return None
+ 
+    def _v(r, desloc=0):
+        r2 = r + desloc
+        if r2 not in bruto.index:
+            return None
+        v = pd.to_numeric(bruto.iat[r2, col_total], errors="coerce")
+        return float(v) if pd.notna(v) else None
+ 
+    def _fecha(desloc):
+        componentes = [_v(idx_mgliq, 0), _v(idx_dir, desloc), _v(idx_amort, desloc), _v(idx_com, desloc)]
+        alvo = _v(idx_mgc, desloc)
+        if alvo is None or any(v is None for v in componentes):
+            return False
+        soma = sum(componentes)
+        return abs(soma - alvo) <= max(1.0, abs(alvo) * 1e-6)
+ 
+    if _fecha(0):
+        return None
+    if _fecha(1):
+        return idx_dir
+    return None
+ 
+ 
 def _extrair_bloco_comparativo(bruto, label_col, ano):
     registros_bloco = []
     if bruto is None or bruto.empty or label_col is None or label_col >= len(bruto.columns):
         return registros_bloco
-
+ 
     mapa_cols = _detectar_cols_produto(bruto, label_col)
     blocos = [
         {"Produto": produto, **cols}
         for produto, cols in mapa_cols.items()
         if produto in ("Consignado", "Imobiliário", "Total")
     ]
-
+ 
+    # No bloco de 2025, os valores podem estar deslocados uma linha abaixo dos
+    # rótulos (ver _detectar_shift_bloco_2025). O deslocamento só é aplicado
+    # quando a identidade contábil confirma o problema.
+    shift_inicio = _detectar_shift_bloco_2025(bruto, label_col) if ano == 2025 else None
+ 
     for bloco in blocos:
         for idx_row in bruto.index:
             linha = bruto.iat[idx_row, label_col]
             linha_norm = normalizar_texto(linha)
             if not linha_norm:
                 continue
-
+ 
+            idx_val = idx_row + 1 if (shift_inicio is not None and idx_row >= shift_inicio) else idx_row
+            if idx_val not in bruto.index:
+                continue
+ 
             realizado = pd.NA
             if bloco["realizado_col"] < len(bruto.columns):
                 try:
-                    v = bruto.iat[idx_row, bloco["realizado_col"]]
+                    v = bruto.iat[idx_val, bloco["realizado_col"]]
                     if pd.notna(v): realizado = float(v)
                 except: pass
-
+ 
             orcado = pd.NA
             if bloco["orcado_col"] < len(bruto.columns):
                 try:
-                    v = bruto.iat[idx_row, bloco["orcado_col"]]
+                    v = bruto.iat[idx_val, bloco["orcado_col"]]
                     if pd.notna(v): orcado = float(v)
                 except: pass
-
+ 
             registros_bloco.append({
                 "Ano": ano,
                 "Produto": bloco["Produto"],
@@ -2395,8 +2464,8 @@ def _extrair_bloco_comparativo(bruto, label_col, ano):
                 "Ordem": int(idx_row),
             })
     return registros_bloco
-
-
+ 
+ 
 def carregar_comparativo_2025(arquivo):
     # O comparativo 2026 x 2025 e montado cruzando DUAS abas, pois a aba
     # "Comparativo 2026 x 2025" hoje traz apenas o bloco de 2025 (Realizado x
@@ -2412,32 +2481,32 @@ def carregar_comparativo_2025(arquivo):
             bruto_2025 = pd.read_excel(arquivo, sheet_name="Comparativo 2025", header=None, engine="openpyxl")
         except Exception:
             bruto_2025 = pd.DataFrame()
-
+ 
     try:
         bruto_2026 = pd.read_excel(arquivo, sheet_name="P&L Acumulado", header=None, engine="openpyxl")
     except Exception:
         bruto_2026 = pd.DataFrame()
-
+ 
     label_col_2025 = _detectar_label_col(bruto_2025) if not bruto_2025.empty else None
     if label_col_2025 is None:
         label_col_2025 = 0
-
+ 
     label_col_2026 = _detectar_label_col(bruto_2026) if not bruto_2026.empty else None
     if label_col_2026 is None:
         label_col_2026 = 1  # convenção da aba "P&L Acumulado": rótulos na coluna B
-
+ 
     registros = []
     registros.extend(_extrair_bloco_comparativo(bruto_2026, label_col_2026, 2026))
     registros.extend(_extrair_bloco_comparativo(bruto_2025, label_col_2025, 2025))
-
+ 
     df = pd.DataFrame(registros)
     if df.empty:
         return df
-
+ 
     return df.sort_values(["Ano", "Produto", "Ordem"]).drop_duplicates(
         ["Ano", "Produto", "Linha_Normalizada"], keep="first"
     )
-
+ 
  
  
 def carregar_2025_acumulado(arquivo):
@@ -2612,7 +2681,14 @@ def montar_comparativo_principais(df_comp, df_2025_acumulado=None):
                     elif "pl medio" in linha_norm:
                         b_acum = df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"].str.contains("pl medio", na=False)]
                     elif "comissao" in linha_norm:
-                        b_acum = df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"].str.contains("comissao", na=False)]
+                        # Comissão (despesa): casamento EXATO primeiro, para não
+                        # pegar "Receita Comissão CRI" (que também contém "comissão").
+                        b_acum = df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"] == "comissao"]
+                        if b_acum.empty:
+                            b_acum = df_2025_acumulado[
+                                df_2025_acumulado["Linha_Normalizada"].str.contains("comissao", na=False)
+                                & ~df_2025_acumulado["Linha_Normalizada"].str.contains("receita", na=False)
+                            ]
                     elif "amortizacao" in linha_norm:
                         b_acum = df_2025_acumulado[df_2025_acumulado["Linha_Normalizada"].str.contains("amortizacao", na=False)]
                     elif "impostos diretos" in linha_norm:
@@ -3589,3 +3665,4 @@ with tab_comp_2025:
  
     except Exception as erro:
         st.info(f"Não consegui carregar a aba Comparativo 2026 x 2025: {erro}")
+ 
