@@ -798,14 +798,18 @@ def obter_periodos_pnl_mensal_anualizado(arquivo):
                 continue
  
             linha_produto = idx + 2
-            tem_produto = False
+            primeiro_produto = None
             if linha_produto in bruto.index:
                 for c in range(col, min(col + 11, max(bruto.columns) + 1)):
                     if c in bruto.columns and normalizar_texto(bruto.loc[linha_produto, c]) in ["consignado", "imobiliario", "total"]:
-                        tem_produto = True
+                        primeiro_produto = normalizar_texto(bruto.loc[linha_produto, c])
                         break
  
-            if not tem_produto:
+            # A data de cabeçalho de um bloco fica sempre na coluna do PRIMEIRO
+            # produto do bloco (Consignado). A partir de jun/26 a planilha passou
+            # a trazer também datas soltas na coluna do Imobiliário; sem este
+            # teste elas seriam lidas como início de bloco.
+            if primeiro_produto != "consignado":
                 continue
  
             chave = data_ts.strftime("%Y-%m")
@@ -881,6 +885,14 @@ def carregar_pnl_mensal(arquivo, versao):
                     ] = c_prod
  
             if not {"Consignado", "Imobiliário", "Total"}.issubset(set(produtos_encontrados.keys())):
+                continue
+ 
+            # A data de cabeçalho fica sempre na coluna do PRIMEIRO produto do
+            # bloco (Consignado). A partir de jun/26 a planilha passou a trazer
+            # também datas soltas na coluna do Imobiliário: elas "enxergam" o
+            # Consignado do bloco seguinte e, sem este teste, seriam lidas como
+            # início de um bloco mensal inexistente.
+            if produtos_encontrados["Consignado"] != min(produtos_encontrados.values()):
                 continue
  
             chave_bloco = data_ts.strftime("%Y-%m")
@@ -983,27 +995,73 @@ def carregar_pnl_acumulado_oficial_completo(arquivo, versao):
     if bruto.empty:
         return pd.DataFrame()
  
-    try:
-        data_ate = pd.Timestamp(bruto.iloc[0, 8])
-        periodo_label = nome_periodo(data_ate)
-    except Exception:
-        data_ate = None
-        periodo_label = "Acumulado"
+    # Cabeçalho, data e colunas lidos de forma DINÂMICA: a aba pode ganhar ou
+    # perder colunas de produto (ex.: a coluna extra "BANCO DIGITAL"), então
+    # nada de offsets fixos. Os offsets antigos ficam apenas como reserva.
+    label_col = _detectar_label_col(bruto)
+    if label_col is None:
+        label_col = 1  # convenção da aba "P&L Acumulado": rótulos na coluna B
  
-    cols_produto = {
-        "Consignado": {"Realizado": 5, "Orçado": 6},
-        "Imobiliário": {"Realizado": 8, "Orçado": 9},
-        "Total": {"Realizado": 11, "Orçado": 12},
-    }
+    linha_produtos = None
+    for r_cab in range(min(10, len(bruto))):
+        for c_cab in range(len(bruto.columns)):
+            if normalizar_texto(bruto.iat[r_cab, c_cab]) in ["consignado", "imobiliario", "total"]:
+                linha_produtos = r_cab
+                break
+        if linha_produtos is not None:
+            break
+    # A linha das métricas (Realizado/Orçado) vem logo abaixo dos produtos;
+    # os dados começam a partir dela.
+    linha_cabecalho = linha_produtos + 1 if linha_produtos is not None else 3
+ 
+    data_ate = None
+    for r_cab in range(min(5, len(bruto))):
+        for c_cab in range(len(bruto.columns)):
+            if normalizar_texto(bruto.iat[r_cab, c_cab]) == "ate":
+                for c_val in range(c_cab + 1, len(bruto.columns)):
+                    candidato = bruto.iat[r_cab, c_val]
+                    if pd.notna(candidato):
+                        try:
+                            data_ate = pd.Timestamp(candidato)
+                        except Exception:
+                            data_ate = None
+                        break
+                break
+        if data_ate is not None:
+            break
+ 
+    if data_ate is None:
+        try:
+            data_ate = pd.Timestamp(bruto.iloc[0, 8])
+        except Exception:
+            data_ate = None
+ 
+    periodo_label = nome_periodo(data_ate) if data_ate is not None else "Acumulado"
+ 
+    mapa_cols = _detectar_cols_produto(bruto, label_col)
+    cols_produto = {}
+    for produto in ["Consignado", "Imobiliário", "Total"]:
+        if produto in mapa_cols:
+            cols_produto[produto] = {
+                "Realizado": mapa_cols[produto]["realizado_col"],
+                "Orçado": mapa_cols[produto]["orcado_col"],
+            }
+ 
+    if not {"Consignado", "Imobiliário", "Total"}.issubset(cols_produto.keys()):
+        cols_produto = {
+            "Consignado": {"Realizado": 5, "Orçado": 6},
+            "Imobiliário": {"Realizado": 8, "Orçado": 9},
+            "Total": {"Realizado": 11, "Orçado": 12},
+        }
  
     registros = []
     ordem = 0
  
     for r in bruto.index:
-        if r <= 3:  
+        if r <= linha_cabecalho:
             continue
  
-        linha_nome = bruto.iloc[r, 1] if 1 < len(bruto.columns) else None
+        linha_nome = bruto.iloc[r, label_col] if label_col < len(bruto.columns) else None
         if pd.isna(linha_nome) or str(linha_nome).strip() == "":
             continue
  
@@ -2515,19 +2573,22 @@ def carregar_2025_acumulado(arquivo):
     except Exception:
         return pd.DataFrame()
  
-    label_col = 0
-    for col in bruto.columns:
-        for r in range(min(50, len(bruto))):
-            val = normalizar_texto(bruto.iat[r, col])
-            if val in ["receitas", "resultado contabil", "resultado contábil"]:
-                label_col = col
-                break
-        if label_col != 0:
-            break
+    label_col = _detectar_label_col(bruto)
+    if label_col is None:
+        label_col = 0
  
-    col_real = label_col + 7
-    col_orc = label_col + 8
-    col_delta = label_col + 9
+    # Colunas do bloco "TOTAL" lidas de forma DINÂMICA, pelo cabeçalho do
+    # produto — o nº de colunas por produto pode variar de uma aba para outra.
+    # Os offsets fixos ficam apenas como reserva.
+    mapa_cols = _detectar_cols_produto(bruto, label_col)
+    if "Total" in mapa_cols:
+        col_real = mapa_cols["Total"]["realizado_col"]
+        col_orc = mapa_cols["Total"]["orcado_col"]
+        col_delta = col_orc + 1
+    else:
+        col_real = label_col + 7
+        col_orc = label_col + 8
+        col_delta = label_col + 9
  
     def valor_numero(v):
         if pd.isna(v): return pd.NA
