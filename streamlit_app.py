@@ -1,3 +1,4 @@
+import datetime
 import re
 import unicodedata
 from pathlib import Path
@@ -654,6 +655,47 @@ def obter_n_meses_acumulado(arquivo, versao):
     return 1
  
  
+@st.cache_data(show_spinner=False)
+def obter_orcado_anual(arquivo, versao, ano):
+    # Orçado anual do Resultado Contábil, lido da aba "Orçado" (o nome na
+    # planilha tem espaço no final, por isso a busca é pelo nome normalizado).
+    # Soma, para todas as linhas "RESULTADO CONTÁBIL" da aba (um bloco por
+    # produto), as colunas cujo cabeçalho de data pertence ao ano informado.
+    try:
+        nomes_abas = pd.ExcelFile(arquivo, engine="openpyxl").sheet_names
+    except Exception:
+        return None
+    aba_orcado = next((nome for nome in nomes_abas if normalizar_texto(nome) == "orcado"), None)
+    if aba_orcado is None:
+        return None
+    try:
+        bruto = pd.read_excel(arquivo, sheet_name=aba_orcado, header=None, engine="openpyxl")
+    except Exception:
+        return None
+
+    linha_datas, colunas_ano, maior_qtd = None, [], 0
+    for r in range(min(10, len(bruto))):
+        # Considera apenas células que já são datas (evita que números do
+        # corpo da aba sejam convertidos em datas por engano).
+        datas = {c: pd.Timestamp(v) for c, v in bruto.iloc[r].items() if isinstance(v, (pd.Timestamp, datetime.datetime, datetime.date))}
+        qtd = len(datas)
+        if qtd > maior_qtd:
+            maior_qtd = qtd
+            linha_datas = r
+            colunas_ano = [c for c, d in datas.items() if d.year == ano]
+    if linha_datas is None or not colunas_ano:
+        return None
+
+    total, encontrou = 0.0, False
+    for r in bruto.index:
+        if any(normalizar_texto(bruto.iat[r, c]) == "resultado contabil" for c in range(min(3, len(bruto.columns)))):
+            valores = pd.to_numeric(bruto.loc[r, colunas_ano], errors="coerce")
+            if valores.notna().any():
+                total += float(valores.sum())
+                encontrou = True
+    return total if encontrou else None
+
+
 def formatar_variacao(valor, label="Δ mês anterior"):
     try:
         valor = float(valor)
@@ -661,8 +703,10 @@ def formatar_variacao(valor, label="Δ mês anterior"):
         valor = 0.0
  
     sinal = "+" if valor > 0 else ""
-    texto = f"{label} {sinal}{valor * 100:,.1f}%"
-    return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+    # Formata só o número (padrão pt-BR); o rótulo vai intacto, para que
+    # "vs Acum. NM 25" não vire "vs Acum, NM 25".
+    numero = f"{sinal}{valor * 100:,.1f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"{label} {numero}"
  
  
 def classe_variacao(valor):
@@ -798,18 +842,14 @@ def obter_periodos_pnl_mensal_anualizado(arquivo):
                 continue
  
             linha_produto = idx + 2
-            primeiro_produto = None
+            tem_produto = False
             if linha_produto in bruto.index:
                 for c in range(col, min(col + 11, max(bruto.columns) + 1)):
                     if c in bruto.columns and normalizar_texto(bruto.loc[linha_produto, c]) in ["consignado", "imobiliario", "total"]:
-                        primeiro_produto = normalizar_texto(bruto.loc[linha_produto, c])
+                        tem_produto = True
                         break
  
-            # A data de cabeçalho de um bloco fica sempre na coluna do PRIMEIRO
-            # produto do bloco (Consignado). A partir de jun/26 a planilha passou
-            # a trazer também datas soltas na coluna do Imobiliário; sem este
-            # teste elas seriam lidas como início de bloco.
-            if primeiro_produto != "consignado":
+            if not tem_produto:
                 continue
  
             chave = data_ts.strftime("%Y-%m")
@@ -885,14 +925,6 @@ def carregar_pnl_mensal(arquivo, versao):
                     ] = c_prod
  
             if not {"Consignado", "Imobiliário", "Total"}.issubset(set(produtos_encontrados.keys())):
-                continue
- 
-            # A data de cabeçalho fica sempre na coluna do PRIMEIRO produto do
-            # bloco (Consignado). A partir de jun/26 a planilha passou a trazer
-            # também datas soltas na coluna do Imobiliário: elas "enxergam" o
-            # Consignado do bloco seguinte e, sem este teste, seriam lidas como
-            # início de um bloco mensal inexistente.
-            if produtos_encontrados["Consignado"] != min(produtos_encontrados.values()):
                 continue
  
             chave_bloco = data_ts.strftime("%Y-%m")
@@ -995,73 +1027,27 @@ def carregar_pnl_acumulado_oficial_completo(arquivo, versao):
     if bruto.empty:
         return pd.DataFrame()
  
-    # Cabeçalho, data e colunas lidos de forma DINÂMICA: a aba pode ganhar ou
-    # perder colunas de produto (ex.: a coluna extra "BANCO DIGITAL"), então
-    # nada de offsets fixos. Os offsets antigos ficam apenas como reserva.
-    label_col = _detectar_label_col(bruto)
-    if label_col is None:
-        label_col = 1  # convenção da aba "P&L Acumulado": rótulos na coluna B
+    try:
+        data_ate = pd.Timestamp(bruto.iloc[0, 8])
+        periodo_label = nome_periodo(data_ate)
+    except Exception:
+        data_ate = None
+        periodo_label = "Acumulado"
  
-    linha_produtos = None
-    for r_cab in range(min(10, len(bruto))):
-        for c_cab in range(len(bruto.columns)):
-            if normalizar_texto(bruto.iat[r_cab, c_cab]) in ["consignado", "imobiliario", "total"]:
-                linha_produtos = r_cab
-                break
-        if linha_produtos is not None:
-            break
-    # A linha das métricas (Realizado/Orçado) vem logo abaixo dos produtos;
-    # os dados começam a partir dela.
-    linha_cabecalho = linha_produtos + 1 if linha_produtos is not None else 3
- 
-    data_ate = None
-    for r_cab in range(min(5, len(bruto))):
-        for c_cab in range(len(bruto.columns)):
-            if normalizar_texto(bruto.iat[r_cab, c_cab]) == "ate":
-                for c_val in range(c_cab + 1, len(bruto.columns)):
-                    candidato = bruto.iat[r_cab, c_val]
-                    if pd.notna(candidato):
-                        try:
-                            data_ate = pd.Timestamp(candidato)
-                        except Exception:
-                            data_ate = None
-                        break
-                break
-        if data_ate is not None:
-            break
- 
-    if data_ate is None:
-        try:
-            data_ate = pd.Timestamp(bruto.iloc[0, 8])
-        except Exception:
-            data_ate = None
- 
-    periodo_label = nome_periodo(data_ate) if data_ate is not None else "Acumulado"
- 
-    mapa_cols = _detectar_cols_produto(bruto, label_col)
-    cols_produto = {}
-    for produto in ["Consignado", "Imobiliário", "Total"]:
-        if produto in mapa_cols:
-            cols_produto[produto] = {
-                "Realizado": mapa_cols[produto]["realizado_col"],
-                "Orçado": mapa_cols[produto]["orcado_col"],
-            }
- 
-    if not {"Consignado", "Imobiliário", "Total"}.issubset(cols_produto.keys()):
-        cols_produto = {
-            "Consignado": {"Realizado": 5, "Orçado": 6},
-            "Imobiliário": {"Realizado": 8, "Orçado": 9},
-            "Total": {"Realizado": 11, "Orçado": 12},
-        }
+    cols_produto = {
+        "Consignado": {"Realizado": 5, "Orçado": 6},
+        "Imobiliário": {"Realizado": 8, "Orçado": 9},
+        "Total": {"Realizado": 11, "Orçado": 12},
+    }
  
     registros = []
     ordem = 0
  
     for r in bruto.index:
-        if r <= linha_cabecalho:
+        if r <= 3:  
             continue
  
-        linha_nome = bruto.iloc[r, label_col] if label_col < len(bruto.columns) else None
+        linha_nome = bruto.iloc[r, 1] if 1 < len(bruto.columns) else None
         if pd.isna(linha_nome) or str(linha_nome).strip() == "":
             continue
  
@@ -2573,22 +2559,19 @@ def carregar_2025_acumulado(arquivo):
     except Exception:
         return pd.DataFrame()
  
-    label_col = _detectar_label_col(bruto)
-    if label_col is None:
-        label_col = 0
+    label_col = 0
+    for col in bruto.columns:
+        for r in range(min(50, len(bruto))):
+            val = normalizar_texto(bruto.iat[r, col])
+            if val in ["receitas", "resultado contabil", "resultado contábil"]:
+                label_col = col
+                break
+        if label_col != 0:
+            break
  
-    # Colunas do bloco "TOTAL" lidas de forma DINÂMICA, pelo cabeçalho do
-    # produto — o nº de colunas por produto pode variar de uma aba para outra.
-    # Os offsets fixos ficam apenas como reserva.
-    mapa_cols = _detectar_cols_produto(bruto, label_col)
-    if "Total" in mapa_cols:
-        col_real = mapa_cols["Total"]["realizado_col"]
-        col_orc = mapa_cols["Total"]["orcado_col"]
-        col_delta = col_orc + 1
-    else:
-        col_real = label_col + 7
-        col_orc = label_col + 8
-        col_delta = label_col + 9
+    col_real = label_col + 7
+    col_orc = label_col + 8
+    col_delta = label_col + 9
  
     def valor_numero(v):
         if pd.isna(v): return pd.NA
@@ -3242,8 +3225,8 @@ with tab_resultados:
             card_composicao_resultado_total_acumulado(df_pnl_completo_global, periodo_sel, empresa_sel_result)
  
         with col_gauge:
-            ORCADO_2026 = 73_400_000.0
-            fig_gauge = grafico_alcance_vs_orcado(valor_acumulado, ORCADO_2026)
+            ORCADO_2026 = obter_orcado_anual(arquivo, versao_arquivo(arquivo), int(periodos_disponiveis["Data"].max().year))
+            fig_gauge = grafico_alcance_vs_orcado(valor_acumulado, ORCADO_2026) if ORCADO_2026 is not None else None
             if fig_gauge is not None:
                 st.plotly_chart(fig_gauge, use_container_width=True)
  
@@ -3726,4 +3709,3 @@ with tab_comp_2025:
  
     except Exception as erro:
         st.info(f"Não consegui carregar a aba Comparativo 2026 x 2025: {erro}")
- 
